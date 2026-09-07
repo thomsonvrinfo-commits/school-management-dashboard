@@ -1,0 +1,3 @@
+import React from 'react';
+const colors = { 'On track': 'bg-[#eef4ef] text-[#38694e]', 'Improving': 'bg-[#e8f3ef] text-[#26765a]', 'Attention required': 'bg-[#fff0e6] text-[#b56b2f]', 'Declining': 'bg-[#fff0e6] text-[#b56b2f]', 'Monitor': 'bg-[#faf2da] text-[#967323]', 'Intervention active': 'bg-[#efedfa] text-[#75649d]', 'Active': 'bg-[#efedfa] text-[#75649d]', 'Completed': 'bg-[#e8f3ef] text-[#26765a]' };
+export default function StatusBadge({ status }) { return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium whitespace-nowrap ${colors[status] || 'bg-stone-100 text-stone-500'}`}><span className="h-1 w-1 rounded-full bg-current" />{status}</span>; }

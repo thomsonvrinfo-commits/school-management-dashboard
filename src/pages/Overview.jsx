@@ -1,0 +1,14 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowUpRight, CalendarCheck, Plus, Sun, Sprout } from 'lucide-react';
+import { useSchool } from '@/components/school/SchoolProvider';
+import OverviewStats from '@/components/school/OverviewStats';
+import PerformanceChart from '@/components/school/PerformanceChart';
+import AttentionPanel from '@/components/school/AttentionPanel';
+import OverviewActivity from '@/components/school/OverviewActivity';
+export default function Overview() {
+ const { data } = useSchool(); const today = new Date(); const greeting = today.getHours() < 12 ? 'Good morning' : today.getHours() < 17 ? 'Good afternoon' : 'Good evening';
+ return <div className="space-y-6"><div className="flex flex-wrap items-center justify-between gap-4"><div><div className="mb-2 flex items-center gap-2 text-[10px] text-[#929a85]"><Sun size={13} />{today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div><h1 className="page-title">{greeting}. Let’s move learning forward.</h1><p className="page-subtitle">Your school at a glance. The right information to make a difference.</p></div><Link to="/reports" className="action-secondary"><ArrowUpRight size={14} />View reports</Link></div>
+ <section className="relative overflow-hidden rounded-xl bg-[#294c39] px-6 py-6 text-white md:px-7"><div className="absolute -right-2 -top-16 h-72 w-72 rounded-full border border-white/[.07]" /><div className="absolute right-14 -top-8 h-56 w-56 rounded-full border border-white/[.08]" /><Sprout className="absolute -bottom-5 right-16 hidden h-40 w-40 rotate-[-15deg] text-[#8daa75]/15 md:block" strokeWidth={0.8} /><div className="relative flex flex-wrap items-center justify-between gap-6"><div><span className="text-[9px] font-medium uppercase tracking-[.19em] text-[#b7c9a8]">The bigger picture</span><h2 className="mt-2 font-heading text-[21px] font-medium tracking-[-.5px]">Behind every number, a learner with potential.</h2><p className="mt-2 max-w-xl text-[11px] leading-relaxed text-[#b2c2af]">Capture the everyday. Understand the patterns. Take the next meaningful step.</p></div><div className="flex gap-2"><Link to="/attendance" className="inline-flex items-center gap-2 rounded-lg border border-[#6e8664] bg-white/[.06] px-4 py-2.5 text-[10px]"><CalendarCheck size={14} />Take attendance</Link><Link to="/assessments?new=1" className="inline-flex items-center gap-2 rounded-lg bg-[#dce8bf] px-4 py-2.5 text-[10px] font-semibold text-[#395035]"><Plus size={14} />Record marks</Link></div></div></section>
+ <OverviewStats /><div className="grid gap-5 xl:grid-cols-[1.55fr_1fr]"><PerformanceChart /><AttentionPanel /></div><OverviewActivity /></div>;
+}

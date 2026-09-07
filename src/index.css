@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -29,8 +31,8 @@
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
-    --font-heading: ui-sans-serif, system-ui, sans-serif;
-    --font-body: ui-sans-serif, system-ui, sans-serif;
+    --font-heading: 'Manrope', sans-serif;
+    --font-body: 'DM Sans', sans-serif;
     --font-display: ui-sans-serif, system-ui, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     --sidebar-background: 0 0% 98%;
@@ -81,6 +83,19 @@
 
 
 
+@layer components {
+  .panel { @apply rounded-xl border border-[#e4e8df] bg-white p-5; }
+  .action-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-[#31563f] px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-[#244430] disabled:opacity-50; }
+  .action-secondary { @apply inline-flex items-center justify-center gap-2 rounded-lg border border-[#dde3d7] bg-white px-4 py-2.5 text-xs font-medium text-[#4e604c] transition-colors hover:bg-[#f0f3eb] disabled:opacity-50; }
+  .field { @apply w-full rounded-lg border border-[#dfe4db] bg-white px-3 py-2.5 text-xs outline-none focus:border-[#789378] focus:ring-2 focus:ring-[#e4ecdf]; }
+  .field-label { @apply mb-1.5 block text-[11px] font-medium text-[#697461]; }
+  .page-title { @apply font-heading text-[27px] font-semibold tracking-[-1px] text-[#293f32] md:text-[30px]; }
+  .page-subtitle { @apply mt-2 text-xs leading-relaxed text-[#87907f]; }
+  .table-head { @apply bg-[#f8faf5] text-left text-[9px] font-medium uppercase tracking-wider text-[#8d9785]; }
+}
+
+@media print { body { background: white; } .panel { break-inside: avoid; } button { display: none !important; } }
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -88,5 +103,7 @@
 
   body {
     @apply bg-background text-foreground font-body;
+    color: #263b33;
+    -webkit-font-smoothing: antialiased;
   }
 }

@@ -1,0 +1,9 @@
+import React, { useState } from 'react';
+import { useSearchParams, Link } from 'react-router-dom';
+import { CalendarCheck } from 'lucide-react';
+import { useSchool } from '@/components/school/SchoolProvider';
+import AttendanceRegister from '@/components/school/AttendanceRegister';
+export default function Attendance() {
+ const { data } = useSchool(); const [params] = useSearchParams(); const [classId, setClassId] = useState(params.get('class') || data.classes[0]?.id || ''); const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+ return <div className="space-y-6"><div><h1 className="page-title">Showing up matters.</h1><p className="page-subtitle">A quick register. A clearer picture of every learner’s participation.</p></div><div className="panel flex flex-wrap items-end gap-4"><label><span className="field-label">Class</span><select className="field min-w-48" value={classId} onChange={e => setClassId(e.target.value)}>{data.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label><span className="field-label">Register date</span><input className="field" type="date" required value={date} max={new Date().toISOString().slice(0, 10)} onChange={e => setDate(e.target.value)} /></label><span className="ml-auto flex items-center gap-2 pb-3 text-xs text-[#8b987b]"><CalendarCheck size={16} />{data.classes.find(c => c.id === classId)?.teacher}</span></div>{classId && date ? <AttendanceRegister key={`${classId}:${date}`} classId={classId} date={date} /> : <div className="panel text-xs">Add a class and students first. <Link to="/classes" className="underline">Manage classes</Link></div>}</div>;
+}

@@ -1,0 +1,60 @@
+{
+  "name": "ClassAttendance",
+  "type": "object",
+  "properties": {
+    "school_id": {
+      "type": "string"
+    },
+    "class_id": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "student_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Present",
+              "Absent",
+              "Late",
+              "Excused"
+            ]
+          }
+        },
+        "required": [
+          "student_id",
+          "status"
+        ]
+      }
+    }
+  },
+  "required": [
+    "school_id",
+    "class_id",
+    "date",
+    "entries"
+  ],
+  "rls": {
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

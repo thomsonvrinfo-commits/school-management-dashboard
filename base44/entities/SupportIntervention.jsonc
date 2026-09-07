@@ -1,0 +1,78 @@
+{
+  "name": "SupportIntervention",
+  "type": "object",
+  "properties": {
+    "school_id": {
+      "type": "string"
+    },
+    "student_id": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "topic": {
+      "type": "string"
+    },
+    "issue": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "review_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Active",
+        "Completed",
+        "Dismissed"
+      ]
+    },
+    "baseline": {
+      "type": "number"
+    },
+    "followup_score": {
+      "type": "number"
+    },
+    "outcome": {
+      "type": "string"
+    },
+    "parent_involvement": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "school_id",
+    "student_id",
+    "action",
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

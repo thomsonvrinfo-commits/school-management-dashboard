@@ -1,0 +1,79 @@
+{
+  "name": "SchoolAssessment",
+  "type": "object",
+  "properties": {
+    "school_id": {
+      "type": "string"
+    },
+    "class_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "topic": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "maximum": {
+      "type": "number"
+    },
+    "term": {
+      "type": "string"
+    },
+    "academic_year": {
+      "type": "string"
+    },
+    "teacher": {
+      "type": "string"
+    },
+    "assessment_type": {
+      "type": "string"
+    },
+    "scores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "student_id": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "student_id",
+          "score"
+        ]
+      }
+    }
+  },
+  "required": [
+    "school_id",
+    "class_id",
+    "title",
+    "maximum",
+    "scores"
+  ],
+  "rls": {
+    "read": {
+      "created_by_id": "{{user.id}}"
+    },
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "created_by_id": "{{user.id}}"
+    },
+    "delete": {
+      "created_by_id": "{{user.id}}"
+    }
+  }
+}

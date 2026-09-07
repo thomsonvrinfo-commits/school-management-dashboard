@@ -1,0 +1,9 @@
+import React from 'react';
+import { Users, CalendarCheck, ChartNoAxesCombined, HeartHandshake, ArrowUpRight } from 'lucide-react';
+import { useSchool } from '@/components/school/SchoolProvider';
+import { average, attendanceRate, displayPercent, percent } from '@/components/school/intelligence';
+export default function OverviewStats() {
+ const { data } = useSchool(); const today = new Date().toISOString().slice(0, 10); const active = data.interventions.filter(i => i.status === 'Active').length;
+ const cards = [{ label: 'Total students', value: data.students.length, note: `Across ${data.classes.length} classes`, icon: Users, bg: 'bg-[#f1f4ec]', color: 'text-[#748561]' }, { label: 'Attendance today', value: displayPercent(attendanceRate(data.attendance.filter(r => r.date === today))), note: `${data.attendance.filter(r => r.date === today).length} class registers recorded`, icon: CalendarCheck, bg: 'bg-[#eef4ee]', color: 'text-[#527f63]' }, { label: 'Assessment average', value: displayPercent(average(data.assessments.flatMap(a => a.scores.map(s => percent(s.score, a.maximum))))), note: `Across ${data.assessments.length} recorded assessments`, icon: ChartNoAxesCombined, bg: 'bg-[#f4f0e6]', color: 'text-[#a88b4e]' }, { label: 'Active interventions', value: active, note: 'Individual support, meaningful change', icon: HeartHandshake, bg: 'bg-[#f0edf7]', color: 'text-[#9580ac]' }];
+ return <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-4">{cards.map(c => <div key={c.label} className="panel p-4 lg:p-5"><div className="flex items-center justify-between"><span className="text-[11px] text-[#7b8678]">{c.label}</span><span className={`flex h-8 w-8 items-center justify-center rounded-lg ${c.bg} ${c.color}`}><c.icon size={16} strokeWidth={1.6} /></span></div><div className="mt-3 font-heading text-[31px] font-semibold tracking-[-1px]">{c.value}</div><div className="mt-2 text-[9px] text-[#939a8e]">{c.note}</div></div>)}</div>;
+}
