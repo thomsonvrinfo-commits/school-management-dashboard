@@ -2,8 +2,13 @@
   "name": "schoolpulse",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=22.18" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "node --no-warnings --test \"packages/*/test/*.test.ts\" \"apps/api/test/*.test.ts\"",
@@ -14,5 +19,8 @@
     "dev:api": "npm run dev -w @schoolpulse/api",
     "dev:web": "npm run dev -w @schoolpulse/web",
     "build:web": "npm run build -w @schoolpulse/web"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.6.1"
   }
 }
