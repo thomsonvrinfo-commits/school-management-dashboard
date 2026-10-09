@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-night: #0a1128;
+  --color-deep: #121a42;
+  --color-raise: #1b2559;
+  --color-violet: #8b7bff;
+  --color-mist: #e9ecff;
+  --color-dim: #a3abd4;
+  --color-present: #4ade80;
+  --color-late: #fbbf24;
+  --color-absent: #fb7185;
+}
+
+html {
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background:
+    radial-gradient(120% 60% at 10% -10%, rgba(139, 123, 255, 0.22), transparent 60%),
+    radial-gradient(90% 50% at 100% 0%, rgba(56, 82, 190, 0.28), transparent 55%),
+    var(--color-night);
+  background-attachment: fixed;
+  color: var(--color-mist);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1;
+}
+
+/* The two bars float over the content and blur it. Blur is expensive on cheap phones, so nothing else uses it. */
+.glass {
+  background: rgba(18, 26, 66, 0.78);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .glass {
+    background: rgba(18, 26, 66, 0.55);
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: var(--color-deep);
+    backdrop-filter: none;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-violet);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* The one moving thing in the app: a ring that pulses while data is on its way to the server. */
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 currentColor; }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pulse-dot {
+    animation: pulse-ring 1.4s ease-out infinite;
+  }
+}
