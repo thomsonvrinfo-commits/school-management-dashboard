@@ -1,0 +1,12 @@
+# Local PostgreSQL for development and integration tests. Not used in production.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: schoolpulse
+      POSTGRES_PASSWORD: schoolpulse
+      POSTGRES_DB: schoolpulse
+    ports: ["5432:5432"]
+    volumes: ["schoolpulse-pg:/var/lib/postgresql/data"]
+volumes:
+  schoolpulse-pg:

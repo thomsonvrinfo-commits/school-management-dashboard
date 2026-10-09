@@ -1,62 +1,85 @@
-# Base44 Project
+# SchoolPulse
 
-Use this repository to run and edit the app locally, then publish changes back through Base44.
+Turn school data into decisions. Users enter facts; SchoolPulse calculates meaning.
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+This repository was started from a school-dashboard tutorial template. That code is kept, untouched, under the git tag
+`legacy-lama-template` for reference only. Nothing from it is the foundation of SchoolPulse.
 
-## Prerequisites
+## What exists today (Slice 1)
 
-1. Clone the repository using the project's Git URL.
-2. Navigate to the project directory.
-3. Install dependencies: `npm install`.
-4. Install the Base44 CLI: `npm install -g base44@latest`.
-5. Install [Deno](https://docs.deno.com/runtime/getting_started/installation/) — the local Base44 backend runs on it.
+A teacher opens **Today**, takes the **Grade 7A register** with no internet, sees **Offline, 1 waiting**, and when the
+connection returns it **syncs**. The **head's overview** then shows the updated attendance, with the raw counts behind
+every number.
 
-Run `base44 --help` (or see the [CLI reference](https://docs.base44.com/developers/references/cli/commands/introduction)) for the full command surface.
+Not built yet, on purpose: assessments, homework, finance, communication, interventions, workflows, reports, AI, parent
+and student experiences. See `docs/ARCHITECTURE.md` for how they will slot in.
 
-## Run Locally
+## Layout
 
-Three commands, from the project root:
-
-```bash
-base44 login   # one-time per machine
-base44 link    # one-time per clone
-base44 dev     # local backend + frontend together
+```
+apps/web          Vite + React + TypeScript PWA (React Router, Tailwind, Dexie, React Hook Form)
+apps/api          Cloudflare Worker (Hono): thin routes -> services -> Store interface
+packages/domain   Pure TypeScript rules: attendance maths, conflict decision, authorization policy, dates
+packages/contracts zod schemas shared by web, API and sync
+packages/sync     Pure TypeScript: offline operation queue, replica rules, sync status
+packages/db       SQL migrations, PostgresStore, dev seed data, test support
+docs/             Architecture decisions
 ```
 
-Open the frontend URL that `base44 dev` prints (typically `http://localhost:5173`).
+Dependencies point one way: `web`/`api` -> `sync` -> `contracts` -> `domain`; `api` -> `db` -> `domain`.
 
-Notes:
+## Run it locally
 
-- **Every fresh clone needs `base44 link`.** It writes `base44/.app.jsonc` (the app-id pointer), which is deliberately gitignored. Your app id is in the Builder URL (`app.base44.com/apps/<id>/...`); `base44 link --help` shows the non-interactive flags.
-- **`base44 dev` runs the frontend for you** (via `site.serveCommand` in this repo's `base44/config.jsonc`) — never run `npm run dev` yourself: alone it serves a UI with no backend behind it (`[base44] Proxy not enabled`, every `/api` call fails), and alongside `base44 dev` the second Vite silently takes the next port and you end up looking at the wrong one.
-- **The app must be published at least once for the UI to load under `base44 dev`.** The frontend boots by fetching app settings from the hosted app; before the first publish that fails and every page redirects to login. The local API works regardless.
-- Entities, functions, and auth run locally — entity data is **in-memory only**, wiped when `base44 dev` restarts. Everything else (Core integrations, OAuth login) is forwarded to your deployed app. Full breakdown: [Local development overview](https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview).
-
-## Frontend Only, Hosted Backend
-
-To work on just the frontend against your app's live hosted backend:
+Requires Node 22.18 or newer and Docker (for PostgreSQL).
 
 ```bash
-base44 dev --remote
+npm install
+npm run db:up                         # PostgreSQL 16 in Docker
+export DATABASE_URL=postgres://schoolpulse:schoolpulse@localhost:5432/schoolpulse
+npm run db:migrate
+npm run db:seed:dev                   # fictional "Mavambo Academy"; refuses to run when ENVIRONMENT=production
 ```
 
-⚠️ In this mode writes go to your app's **production data** — plain `base44 dev` keeps everything local.
+Create `apps/api/.dev.vars` with a long random secret (never commit it):
 
-## Publish Your Changes
+```
+AUTH_SECRET=replace-with-at-least-32-random-characters
+```
 
-After pushing your changes to git, open the Base44 dashboard and publish the app:
+Then, in two terminals:
 
 ```bash
-base44 dashboard open
+npm run dev:api     # Worker on http://localhost:8787 (uses wrangler's localConnectionString for Hyperdrive)
+npm run dev:web     # PWA on http://localhost:5173, proxying /v1 to the Worker
 ```
 
-This repo syncs to Base44 through git, so publish from the dashboard rather than `base44 deploy` — a CLI deploy ships your local tree directly, bypassing the sync, and the deployed state silently diverges from the repo.
+Sign in as `chipo@mavambo.example` (teacher) or `head@mavambo.example` (head). The password is printed by the seed script
+(default `schoolpulse-dev`). To see offline mode: open the register, switch the browser to offline in DevTools, mark
+and save, then go back online.
 
-## Docs & Support
+## Tests
 
-GitHub integration: [https://docs.base44.com/developers/app-code/local-development/github](https://docs.base44.com/developers/app-code/local-development/github)
+```bash
+npm test                 # domain, contracts, sync: always run. API + database: run when PostgreSQL is configured.
+npm run typecheck
+npm run check:imports    # works without installing anything
+```
 
-Local development: [https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview](https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview)
+Database and API tests need a PostgreSQL the `psql` command can reach, and a role that can create databases:
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+```bash
+export PSQL_TEST_CONN="host=localhost user=schoolpulse password=schoolpulse dbname=schoolpulse"
+npm test
+```
+
+Without `PSQL_TEST_CONN` those tests are skipped and say so. If `TEST_DATABASE_URL` is set and the `postgres` package is
+installed, the tests use the production database adapter instead of `psql`.
+
+## Deploying
+
+- **Web (Cloudflare Pages, existing project):** root directory = repo root, build command `npm run build:web`, output
+  directory `apps/web/dist`, environment variable `VITE_API_URL` = the API's URL.
+- **API (Cloudflare Worker):** `npx wrangler hyperdrive create schoolpulse-db --connection-string=...`, paste the id into
+  `apps/api/wrangler.toml`, set `ALLOWED_ORIGIN` to the Pages URL, `npx wrangler secret put AUTH_SECRET`, then
+  `npm run deploy -w @schoolpulse/api`.
+- **Database:** any PostgreSQL 16 reachable from Cloudflare Hyperdrive. Run `npm run db:migrate` against it. Never run the seed.
