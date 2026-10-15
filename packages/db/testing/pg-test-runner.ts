@@ -176,8 +176,14 @@ export function loadMigrations() {
     .map((name) => ({ name, sql: readFileSync(migrationsDir + name, "utf8") }));
 }
 
-/** Creates a brand-new empty database, applies every migration, and returns handles to it. */
-export async function createTestDatabase(): Promise<TestDatabase> {
+export interface TestDatabaseOptions {
+  /** Apply every migration (default). Pass false to start from an empty database and apply some yourself. */
+  migrate?: boolean;
+}
+
+/** Creates a brand-new empty database, applies every migration (unless told not to), and returns handles to it. */
+export async function createTestDatabase(opts: TestDatabaseOptions = {}): Promise<TestDatabase> {
+  const applyAll = opts.migrate !== false;
   const name = `sp_test_${randomBytes(6).toString("hex")}`;
 
   if (process.env.TEST_DATABASE_URL) {
@@ -186,7 +192,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     const u = new URL(process.env.TEST_DATABASE_URL);
     u.pathname = `/${name}`;
     const conn = await postgresJsRunnerFactory(u.toString());
-    await migrate(conn.runner, loadMigrations());
+    if (applyAll) await migrate(conn.runner, loadMigrations());
     return {
       runner: conn.runner,
       db: createDb(conn.runner),
@@ -203,7 +209,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   const admin = new PsqlRunner(base);
   await admin.exec(`create database ${name}`);
   const runner = new PsqlRunner(`${base} dbname=${name}`);
-  await migrate(runner, loadMigrations());
+  if (applyAll) await migrate(runner, loadMigrations());
   return {
     runner,
     db: createDb(runner),

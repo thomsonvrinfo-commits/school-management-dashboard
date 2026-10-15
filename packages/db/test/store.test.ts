@@ -18,7 +18,7 @@ after(async () => {
 
 test("migrations create the schema and are recorded", { skip }, async () => {
   const rows = await t.runner.query<{ name: string }>("select name from schema_migrations");
-  assert.deepEqual(rows.map((r) => r.name), ["0001_init.sql"]);
+  assert.deepEqual(rows.map((r) => r.name), ["0001_init.sql", "0002_school_administration.sql"]);
 });
 
 test("re-running migrate applies nothing", { skip }, async () => {

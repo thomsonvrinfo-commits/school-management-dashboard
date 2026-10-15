@@ -96,12 +96,15 @@ export class PostgresStore implements Store {
   }
 
   // ---------- teaching ----------
+  // Slice 2: an ARCHIVED class (migration 0002 `classes.status`) no longer appears on a teacher's phone (class list and
+  // today's timetable). `teachesClass` is deliberately NOT filtered: attendance a teacher recorded offline for a class
+  // that was archived in the meantime must still sync, never be thrown away.
 
   async teacherClasses(schoolId: string, userId: string): Promise<ClassRow[]> {
     return this.db.query<ClassRow>(
       `select c.id, c.name, c.grade_level as "gradeLevel"
          from classes c join class_teachers ct on ct.school_id = c.school_id and ct.class_id = c.id
-        where c.school_id = $1 and ct.user_id = $2 order by c.name`,
+        where c.school_id = $1 and ct.user_id = $2 and c.status = 'active' order by c.name`,
       [schoolId, userId],
     );
   }
@@ -137,7 +140,7 @@ export class PostgresStore implements Store {
       `select t.id, t.class_id as "classId", c.name as "className", t.subject,
               to_char(t.starts_at, 'HH24:MI') as "startsAt", to_char(t.ends_at, 'HH24:MI') as "endsAt"
          from timetable_slots t join classes c on c.school_id = t.school_id and c.id = t.class_id
-        where t.school_id = $1 and t.teacher_user_id = $2 and t.weekday = $3
+        where t.school_id = $1 and t.teacher_user_id = $2 and t.weekday = $3 and c.status = 'active'
         order by t.starts_at`,
       [schoolId, userId, weekday],
     );

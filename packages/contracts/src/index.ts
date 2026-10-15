@@ -3,10 +3,11 @@
  * The server validates every request with these; the client uses the inferred types.
  */
 import { z } from "zod";
-import { ATTENDANCE_STATUSES, ROLES, isIsoDate } from "@schoolpulse/domain";
+import { ATTENDANCE_STATUSES, ROLES } from "@schoolpulse/domain";
+import { isoDate, uuid } from "./primitives.ts";
 
-export const uuid = z.string().uuid();
-export const isoDate = z.string().refine(isIsoDate, "Expected a real calendar date as YYYY-MM-DD");
+// Moved to primitives.ts in Slice 2 so admin.ts can share them without an import cycle. Same names, same exports.
+export { isoDate, uuid };
 export const attendanceStatus = z.enum(ATTENDANCE_STATUSES);
 export const role = z.enum(ROLES);
 
@@ -175,5 +176,9 @@ export const attendanceSummaryResponse = z.object({
 });
 export type AttendanceSummaryResponse = z.infer<typeof attendanceSummaryResponse>;
 
-export const apiError = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
+/** `field` (Slice 2) names the input a validation or conflict error is about; older clients simply ignore it. */
+export const apiError = z.object({ error: z.object({ code: z.string(), message: z.string(), field: z.string().optional() }) });
 export type ApiError = z.infer<typeof apiError>;
+
+// ---------- Slice 2: school administration ----------
+export * from "./admin.ts";
