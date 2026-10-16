@@ -103,6 +103,8 @@ export interface AdminStore {
   deactivateOtherYears(schoolId: string, exceptId: string): Promise<void>;
   deleteAcademicYear(schoolId: string, id: string): Promise<boolean>;
   countYearDependents(schoolId: string, id: string): Promise<{ classes: number; terms: number }>;
+  /** Earliest and latest date on which anything already happened in this year's classes (a placement started or a register was taken). */
+  yearActivityBounds(schoolId: string, id: string): Promise<{ firstDate: string | null; lastDate: string | null }>;
   listTerms(schoolId: string, academicYearId?: string): Promise<TermRow[]>;
   getTerm(schoolId: string, id: string): Promise<TermRow | null>;
   insertTerm(t: NewTerm): Promise<void>;
@@ -133,6 +135,8 @@ export interface AdminStore {
   updateClass(schoolId: string, id: string, patch: ClassPatch): Promise<void>;
   classHasEnrolments(schoolId: string, id: string): Promise<boolean>;
   classHasAttendance(schoolId: string, id: string): Promise<boolean>;
+  /** Placements that have not finished: still open, or ending today or later (includes ones starting in the future). */
+  classLiveEnrolmentCount(schoolId: string, id: string, today: string): Promise<number>;
   classEnrolmentStarts(schoolId: string, id: string): Promise<string[]>;
 
   // ---- teachers ----

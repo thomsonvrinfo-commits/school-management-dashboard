@@ -142,6 +142,19 @@ export class PostgresAdminStore implements AdminStore {
     return rows[0]!;
   }
 
+  async yearActivityBounds(schoolId: string, id: string): Promise<{ firstDate: string | null; lastDate: string | null }> {
+    const rows = await this.db.query<{ firstDate: string | null; lastDate: string | null }>(
+      `select ${D("min(x.d)")} as "firstDate", ${D("max(x.d)")} as "lastDate" from (
+         select e.starts_on as d from enrollments e join classes c on c.school_id = e.school_id and c.id = e.class_id
+          where c.school_id = $1 and c.academic_year_id = $2
+         union all
+         select a.date from attendance_records a join classes c on c.school_id = a.school_id and c.id = a.class_id
+          where c.school_id = $1 and c.academic_year_id = $2) x`,
+      [schoolId, id],
+    );
+    return rows[0]!;
+  }
+
   private termSelect(where: string) {
     return `select id, academic_year_id as "academicYearId", name, ${D("starts_on")} as "startsOn", ${D("ends_on")} as "endsOn"
               from terms where school_id = $1 ${where}`;
@@ -401,6 +414,14 @@ export class PostgresAdminStore implements AdminStore {
 
   async classHasAttendance(schoolId: string, id: string): Promise<boolean> {
     return (await this.db.query(`select 1 from attendance_records where school_id = $1 and class_id = $2 limit 1`, [schoolId, id])).length > 0;
+  }
+
+  async classLiveEnrolmentCount(schoolId: string, id: string, today: string): Promise<number> {
+    const rows = await this.db.query<{ n: number }>(
+      `select count(*)::int as n from enrollments where school_id = $1 and class_id = $2 and (ends_on is null or ends_on >= $3::date)`,
+      [schoolId, id, today],
+    );
+    return rows[0]!.n;
   }
 
   async classEnrolmentStarts(schoolId: string, id: string): Promise<string[]> {

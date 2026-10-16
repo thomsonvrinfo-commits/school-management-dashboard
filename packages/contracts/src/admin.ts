@@ -149,6 +149,8 @@ export const studentListQuery = paginationQuery.extend({
   unplaced: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
 });
 export type StudentListQuery = z.input<typeof studentListQuery>;
+/** What the server holds after parsing: defaults applied, flags turned into booleans. */
+export type StudentListParams = z.output<typeof studentListQuery>;
 
 export const placementDto = z.object({
   id: uuid,
@@ -237,6 +239,7 @@ export const classListQuery = paginationQuery.extend({
   status: classStatus.optional(),
 });
 export type ClassListQuery = z.input<typeof classListQuery>;
+export type ClassListParams = z.output<typeof classListQuery>;
 
 export const teacherRef = z.object({ id: uuid, name: z.string() });
 export type TeacherRef = z.infer<typeof teacherRef>;

@@ -94,14 +94,14 @@ export interface PlacementTarget {
 }
 
 /** The enrolment with the latest start: the one that is current, or the most recent one if the student is unplaced. */
-export function latestEnrolment(enrolments: readonly EnrolmentSpan[]): EnrolmentSpan | null {
-  let latest: EnrolmentSpan | null = null;
+export function latestEnrolment<T extends EnrolmentSpan>(enrolments: readonly T[]): T | null {
+  let latest: T | null = null;
   for (const e of enrolments) if (!latest || e.startsOn > latest.startsOn) latest = e;
   return latest;
 }
 
 /** The enrolment covering `date`, if any. */
-export function enrolmentOn(enrolments: readonly EnrolmentSpan[], date: string): EnrolmentSpan | null {
+export function enrolmentOn<T extends EnrolmentSpan>(enrolments: readonly T[], date: string): T | null {
   return enrolments.find((e) => e.startsOn <= date && (e.endsOn === null || e.endsOn >= date)) ?? null;
 }
 

@@ -43,7 +43,17 @@ class PsqlSession {
     w(out);
   }
 
+  // Statements on one session run strictly one after another, like postgres.js does inside a transaction. Without this,
+  // two overlapping calls (e.g. a Promise.all inside a transaction) would overwrite each other's reply slot and hang.
+  private tail: Promise<unknown> = Promise.resolve();
+
   run(statement: string): Promise<string> {
+    const next = this.tail.then(() => this.runNow(statement));
+    this.tail = next.catch(() => undefined);
+    return next;
+  }
+
+  private runNow(statement: string): Promise<string> {
     return new Promise((resolve) => {
       this.counter += 1;
       this.marker = `__END_${this.counter}_${randomBytes(4).toString("hex")}__`;

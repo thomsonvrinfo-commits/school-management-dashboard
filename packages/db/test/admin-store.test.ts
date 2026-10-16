@@ -18,7 +18,7 @@ const S = DEV_IDS.school;
 
 let t: TestDatabase;
 let admin: AdminDb;
-const q = (sql: string, p: (string | number | null)[] = []) => t.runner.query(sql, p);
+const q = <T = Record<string, unknown>>(sql: string, p: (string | number | null)[] = []) => t.runner.query<T>(sql, p);
 
 before(async () => {
   if (skip) return;
@@ -273,7 +273,7 @@ test("students list: search, filters, today's class, upcoming class, unplaced, p
   assert.equal((await s.listStudents(S, { q: "%" }, TODAY, 25, 0)).total, 0, "a percent sign is a character, not a wildcard");
   assert.equal((await s.listStudents(S, { q: "_" }, TODAY, 25, 0)).total, 0);
   assert.equal((await s.listStudents(S, { q: "'; drop table students; --" }, TODAY, 25, 0)).total, 0);
-  assert.equal((await q(`select count(*)::int n from students`))[0]!.n > 30, true, "and the table is still there");
+  assert.equal((await q<{ n: number }>(`select count(*)::int n from students`))[0]!.n > 30, true, "and the table is still there");
 
   // class filter = in that class TODAY
   const in7A = await s.listStudents(S, { classId: DEV_IDS.class7A }, TODAY, 100, 0);
@@ -341,7 +341,7 @@ test("teachers: only active teacher members of THIS school can be assigned, enfo
   await refuses(() => s.assignTeacher(S, DEV_IDS.class7A, ID.inactiveTeacher, DEV_IDS.head), "check", "class_teachers_teacher_membership");
   // ...and the other school's class cannot be used from this school
   await refuses(() => s.assignTeacher(S, ID.otherClass, DEV_IDS.teacher, DEV_IDS.head), "foreign_key");
-  assert.equal((await q(`select count(*)::int n from class_teachers where class_id = $1`, [ID.otherClass]))[0]!.n, 0);
+  assert.equal((await q<{ n: number }>(`select count(*)::int n from class_teachers where class_id = $1`, [ID.otherClass]))[0]!.n, 0);
 
   // the legitimate path
   assert.equal(await s.assignTeacher(ID.otherSchool, ID.otherClass, ID.otherTeacher, ID.otherTeacher), true);
