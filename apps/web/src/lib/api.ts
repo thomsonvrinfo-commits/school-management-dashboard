@@ -20,11 +20,14 @@ export class NetworkFailure extends Error {
 export class ApiFailure extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  /** The request field the server says the problem is about (school administration errors name one). */
+  readonly field: string | undefined;
+  constructor(status: number, code: string, message: string, field?: string) {
     super(message);
     this.name = "ApiFailure";
     this.status = status;
     this.code = code;
+    this.field = field;
   }
 }
 
@@ -71,8 +74,8 @@ async function readOrThrow<T>(res: Response): Promise<T> {
     /* fall through */
   }
   if (!res.ok) {
-    const err = (payload as { error?: { code?: string; message?: string } } | null)?.error;
-    throw new ApiFailure(res.status, err?.code ?? "unknown", err?.message ?? "The request was refused.");
+    const err = (payload as { error?: { code?: string; message?: string; field?: string } } | null)?.error;
+    throw new ApiFailure(res.status, err?.code ?? "unknown", err?.message ?? "The request was refused.", err?.field);
   }
   return payload as T;
 }
@@ -106,7 +109,8 @@ async function ensureAccess(): Promise<string> {
   return access!.token;
 }
 
-async function authed<T>(method: string, path: string, body?: unknown): Promise<T> {
+/** An authenticated request with token refresh and one retry. Slice 2 screens use this through lib/admin-api.ts. */
+export async function authed<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res = await send(method, path, body, await ensureAccess());
   if (res.status === 401) {
     access = null; // the token was refused (revoked or clock skew): get a fresh one once

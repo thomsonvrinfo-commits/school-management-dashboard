@@ -6,7 +6,8 @@
   "engines": { "node": ">=22.18" },
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "node --no-warnings --test \"packages/*/test/*.test.ts\" \"apps/api/test/*.test.ts\"",
+    "test": "node --no-warnings --test \"packages/*/test/*.test.ts\" \"apps/api/test/*.test.ts\" \"apps/web/test/*.test.ts\"",
+    "check:render": "bun apps/web/check/render-check.tsx && bun apps/web/check/admin-render-check.tsx",
     "check:imports": "node --no-warnings scripts/check-imports.ts",
     "db:up": "docker compose up -d db",
     "db:migrate": "node --no-warnings packages/db/scripts/migrate.ts",

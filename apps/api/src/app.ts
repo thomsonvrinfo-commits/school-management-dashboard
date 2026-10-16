@@ -57,7 +57,8 @@ type Handler = (c: Ctx) => Promise<Response>;
  */
 const adapt = (h: AdminHandler): Handler => async (c) => {
   const res = await h(c.get("deps"), c.get("auth"), { params: c.req.param(), query: c.req.query(), json: () => c.req.json() });
-  return res.body === undefined ? c.body(null, res.status) : c.json(res.body, res.status);
+  // 204 is the only status without a body; the casts keep Hono's contentful/contentless status types happy.
+  return res.body === undefined ? c.body(null, res.status as 204) : c.json(res.body, res.status as 200 | 201);
 };
 
 const handlers: Record<string, Handler> = {
