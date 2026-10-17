@@ -34,7 +34,7 @@ machine with the full toolchain is part of integration (section 11).
 
 ## 4. Files
 
-Counts are from `git diff --stat fd0ba13..HEAD` before this document: 61 files, +7,980 / -29.
+From `git diff --stat fd0ba13..HEAD` at the last commit before this line was written: 65 files, +8,403 / -31.
 
 **Added**
 - `packages/db/migrations/0002_school_administration.sql`, `packages/db/preflight/0002_school_administration.sql`
@@ -73,8 +73,7 @@ untouched); `enrollments_no_overlap`; a teacher-membership trigger on `class_tea
 
 **One constraint is relaxed on purpose.** 0001 made class names unique per school. They are now unique per school **and academic
 year** (case-insensitively), and classes with no year keep the old per-school rule. This is what lets "Grade 7A" exist again next
-year. Revert path: none needed unless you have created two classes with one name in different years; then you must rename one
-before re-adding the old constraint.
+year. To restore the old per-school rule later you would first have to rename one of any two same-named classes that sit in different years.
 
 **Pre-flight (run this first, read-only).**
 
@@ -125,7 +124,7 @@ All with `PSQL_TEST_CONN` pointing at a throwaway PostgreSQL 16.
 | `tsc` for `domain`, `contracts`, `sync` | clean |
 | `tsc` for `db` and `api` | only "Cannot find module `postgres` / `hono`" and the implicit-any errors that follow from those; nothing else |
 | `tsc` for the new web files | clean, **against throwaway type shims** for `react-router`, forms and test types, not against the real packages |
-| Mutation checks | 19 deliberate bugs injected one at a time (tenant filter removed, teacher authorization widened, back-dating allowed, attendance guard off, archived classes shown, roster authorization removed, strict bodies off, archive guard off, wrong end date, coarse role gate off, no placement locks in sync/move/removal, same-day moves allowed, no date cap, year ignoring history, no restore on removal). The suite failed on 18. The one that survives (removing the application's teacher lookup) is caught by the database trigger by design. |
+| Mutation checks | 18 deliberate bugs injected one at a time into the final code (tenant filter removed, teacher authorization widened, back-dating allowed, attendance guard off, archived classes shown, roster authorization removed, strict bodies off, archive guard off, wrong end date, coarse role gate off, no placement locks in sync / move / removal, same-day moves allowed, no date cap, year ignoring history, no restore on removal). The suite failed on **17**. The one that survives (removing the application's own teacher lookup) is still refused by the database trigger, by design. |
 
 **Skipped tests.** With `PSQL_TEST_CONN` (and `TEST_DATABASE_URL`) unset, every test that needs a database skips itself and says why:
 **162 of the 294 tests skip and 132 run** (12 of the 25 test files use the database: the db and API suites; the pure domain,
@@ -186,7 +185,7 @@ Do these in order, and stop at the first surprise. Do not do any of it until Sli
 ## 12. Known limitations
 
 - The head is the only administrator (no school-admin role, no deputy). Teachers see only what they teach.
-- Changing the school's timezone changes what "today" means for Slice 1's register as well; it is allowed but the screen should say so before the head saves it.
+- Changing the school's timezone changes what "today" means for Slice 1's register as well. It is allowed; the form only carries a hint ("Decides what 'today' means for registers. Change it only if it is wrong."), with no confirmation step.
 - Administration screens need a connection: they are not part of the offline replica (only the register is).
 - No import (CSV/Excel), no bulk move or year-end promotion, no student photos, guardians or contact details, no audit viewer (every change is written to `audit_log`, and there is no screen for it).
 - Class names are unique per academic year, so a class from last year and one from this year can share a name; a report that groups by name alone would merge them.
