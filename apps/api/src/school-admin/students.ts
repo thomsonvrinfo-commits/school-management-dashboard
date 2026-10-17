@@ -12,9 +12,15 @@ import { HttpError } from "../errors.ts";
 import type { AuthContext } from "../services/auth.ts";
 import { audit, changedFields, ensure, httpFromProblem, requireAction, schoolIdOf, todayOf, withConstraints, type ConstraintRule } from "./common.ts";
 
+const LEGACY_STUDENT_MESSAGE =
+  "This student's record has an admission number or a name outside the current limits (admission number 1-30 characters, names 1-100). Correct it with Edit first (the change you asked for is not applied), then try again.";
+
 const studentRules: Record<string, ConstraintRule> = {
   students_school_admission_ci_key: { status: 409, code: "admission_no_taken", message: "Another student already has that admission number.", field: "admissionNo" },
   students_school_id_admission_no_key: { status: 409, code: "admission_no_taken", message: "Another student already has that admission number.", field: "admissionNo" },
+  // 0002 added these as NOT VALID so old rows could never block the migration; PostgreSQL still checks them whenever such a row is updated.
+  students_admission_len: { status: 409, code: "record_needs_correction", message: LEGACY_STUDENT_MESSAGE },
+  students_names_len: { status: 409, code: "record_needs_correction", message: LEGACY_STUDENT_MESSAGE },
   enrollments_no_overlap: { status: 409, code: "placement_overlaps", message: "That would put the student in two classes on the same day. Change the date, or move them instead." },
 };
 

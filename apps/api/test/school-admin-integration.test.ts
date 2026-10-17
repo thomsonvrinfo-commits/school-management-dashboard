@@ -27,7 +27,7 @@ const register = async (admissionNo: string, classId: string | null, who: Signed
   }), 201).body;
 const assign = async (classId: string, userId: string, who: Signed = f.head) =>
   expectOk(await call(f, who, "POST /v1/classes/:id/teachers", { params: { id: classId }, body: { userId } }));
-const pushAs = (who: Signed, device: string, classId: string, entries: { studentId: string; status: "present" | "late" | "absent"; baseVersion?: number }[], date: string, opId?: string) =>
+const pushAs = (who: Signed, device: string, classId: string, entries: { studentId: string; status: "present" | "late" | "absent"; baseVersion?: number }[], date: string, opId?: ReturnType<typeof crypto.randomUUID>) =>
   push(f.deps, who.auth, { deviceId: device, ops: [attendanceOp(classId, date, entries, opId)] });
 const replica = async (who: Signed) => bootstrapResponse.parse(await bootstrap(f.deps, who.auth));
 const atTime = async <T>(iso: string, fn: () => Promise<T>): Promise<T> => {

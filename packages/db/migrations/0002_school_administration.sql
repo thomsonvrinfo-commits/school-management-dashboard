@@ -6,8 +6,9 @@
 -- constraint is relaxed on purpose, and it is called out below: class names become unique per academic year instead
 -- of per school, so "Grade 7A" can exist again next year.
 --
--- Apply AFTER Slice 1 is stable (see docs/SLICE-2-HANDOFF.md). Run the pre-flight queries there first; if any of them
--- finds a row, this migration would fail and, because migrations run in one transaction, change nothing.
+-- Apply AFTER Slice 1 is stable (see docs/SLICE-2-HANDOFF.md). Run packages/db/preflight/0002_school_administration.sql
+-- first; if it returns a row with severity 'blocking', this migration would fail and, because migrations run in one
+-- transaction, change nothing.
 
 -- Needed for "no two overlapping date ranges" exclusion constraints on uuid + daterange columns.
 -- (Supported on Neon and on stock PostgreSQL 16; requires a role allowed to create extensions.)

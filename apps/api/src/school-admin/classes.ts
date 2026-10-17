@@ -15,6 +15,11 @@ import { audit, changedFields, ensure, requireAction, schoolIdOf, todayOf, withC
 const classRules: Record<string, ConstraintRule> = {
   classes_school_year_name_key: { status: 409, code: "class_name_taken", message: "This academic year already has a class with that name.", field: "name" },
   classes_school_nullyear_name_key: { status: 409, code: "class_name_taken", message: "Another class already has that name.", field: "name" },
+  // Added NOT VALID by 0002 so old rows never blocked the migration; PostgreSQL still checks it whenever such a row is updated.
+  classes_grade_len: {
+    status: 409, code: "record_needs_correction", field: "gradeLevel",
+    message: "This class's grade level is outside the current limit (1-20 characters). Correct the grade level as part of this edit, then try again.",
+  },
   classes_school_year_grade_stream_key: { status: 409, code: "class_stream_taken", message: "This academic year already has a class for that grade and stream.", field: "stream" },
 };
 

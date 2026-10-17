@@ -381,3 +381,22 @@ test("a response that is an error never leaks details of the other school", { sk
   const r: Res = await call(f, f.otherHead, "GET /v1/students/:id", { params: { id: (await call(f, f.head, "GET /v1/students", { query: { q: "MA5001" } })).body.items[0].id } });
   assert.equal(JSON.stringify(r.body).includes("Tadiwa"), false);
 });
+
+test("a record from before the registry that breaks the new length limits gets a clear 409, not a server error, and can be corrected", { skip }, async () => {
+  const q = (sql: string, p: (string | number | null)[] = []) => f.t.runner.query(sql, p);
+  // Rebuild what production can hold: the check is NOT VALID there, so rows written before it existed are still in the table.
+  await q(`alter table students drop constraint students_names_len`);
+  const id = crypto.randomUUID();
+  await q(`insert into students (id, school_id, admission_no, first_name, last_name) values ($1, $2, 'LG-1', repeat('A', 120), 'Old')`, [id, DEV_IDS.school]);
+  await q(`alter table students add constraint students_names_len check (length(first_name) between 1 and 100 and length(last_name) between 1 and 100) not valid`);
+
+  const patch = (body: Record<string, unknown>) => call(f, f.head, "PATCH /v1/students/:id", { params: { id }, body });
+  const unrelated = expectError(await patch({ gender: "male" }), 409, "record_needs_correction");
+  assert.match(unrelated.body.error.message, /Correct it with Edit first/);
+  expectError(await call(f, f.head, "POST /v1/students/:id/status", { params: { id }, body: { status: "withdrawn" } }), 409, "record_needs_correction");
+  assert.equal((await detail(id)).status, "enrolled", "nothing was half-applied");
+  assert.equal((await detail(id)).gender, null);
+  // correcting the offending field in the same edit works, and after that other changes do too
+  expectOk(await patch({ firstName: "Shortened", gender: "male" }));
+  assert.equal(expectOk(await call(f, f.head, "POST /v1/students/:id/status", { params: { id }, body: { status: "withdrawn" } })).body.status, "withdrawn");
+});

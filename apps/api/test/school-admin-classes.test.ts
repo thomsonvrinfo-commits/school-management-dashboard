@@ -136,6 +136,10 @@ test("a class from before academic years existed can be given one, once; after t
   // Grade 5A was created by Slice 1: no year, one student enrolled since 2026-01-12.
   assert.equal((await getClass(EXTRA.class5A)).academicYear, null);
   expectError(await patchClass(EXTRA.class5A, { academicYearId: y2025 }), 409, "year_excludes_history", "academicYearId");
+  // a LATER year does not contain its history either: attaching it would lock the class to a year its own registers fall outside
+  const later = expectError(await patchClass(EXTRA.class5A, { academicYearId: y2027 }), 409, "year_excludes_history", "academicYearId");
+  assert.match(later.body.error.message, /2026-01-12/, "the message says which dates must be covered");
+  assert.equal((await getClass(EXTRA.class5A)).academicYear, null, "refused changes leave the class as it was");
   expectError(await patchClass(EXTRA.class5A, { academicYearId: crypto.randomUUID() }), 400, "academic_year_not_found", "academicYearId");
   const dated = expectOk(await patchClass(EXTRA.class5A, { academicYearId: y2026 })).body;
   assert.equal(dated.academicYear.name, "2026");
@@ -315,4 +319,18 @@ test("roster: a student who has left the school is no longer listed from the day
   expectOk(await call(f, f.head, "POST /v1/students/:id/status", { params: { id: s.id }, body: { status: "transferred", effectiveFrom: TOMORROW } }));
   assert.deepEqual((expectOk(await roster(id, f.head, TODAY)).body.students as { id: string }[]).map((x) => x.id), [s.id]);
   assert.deepEqual(expectOk(await roster(id, f.head, TOMORROW)).body.students, []);
+});
+
+test("a class from before the new limits with an over-long grade level gets a clear 409, not a server error, and can be corrected", { skip }, async () => {
+  const q = (sql: string, p: (string | number | null)[] = []) => f.t.runner.query(sql, p);
+  await q(`alter table classes drop constraint classes_grade_len`);
+  const id = crypto.randomUUID();
+  await q(`insert into classes (id, school_id, name, grade_level) values ($1, $2, 'Old Long Grade', repeat('G', 25))`, [id, DEV_IDS.school]);
+  await q(`alter table classes add constraint classes_grade_len check (length(grade_level) between 1 and 20) not valid`);
+
+  const res = expectError(await patchClass(id, { stream: "Q" }), 409, "record_needs_correction", "gradeLevel");
+  assert.match(res.body.error.message, /grade level/);
+  assert.equal((await getClass(id)).stream, null, "nothing was half-applied");
+  expectOk(await patchClass(id, { gradeLevel: "5", stream: "Q" }));
+  assert.equal((await getClass(id)).stream, "Q");
 });
