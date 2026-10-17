@@ -328,7 +328,8 @@ test("attendance history is separate from placement: later class changes never t
   assert.equal(await s.classHasAttendance(S, DEV_IDS.class7A), true);
   assert.equal(await s.classHasEnrolments(S, DEV_IDS.class7A), true);
   assert.equal(await s.classHasEnrolments(ID.otherSchool, DEV_IDS.class7A), false);
-  assert.deepEqual(await s.classEnrolmentStarts(S, DEV_IDS.class7A), ["2026-01-12"]);
+  assert.deepEqual(await s.classActivityBounds(S, DEV_IDS.class7A), { firstDate: "2026-01-12", lastDate: TODAY }, "placements start 12 Jan; the move above ended one today; registers run to 7 Oct");
+  assert.deepEqual(await s.classActivityBounds(ID.otherSchool, DEV_IDS.class7A), { firstDate: null, lastDate: null }, "scoped to the school");
 });
 
 // ---------- teachers ----------

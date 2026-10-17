@@ -57,6 +57,8 @@ export const MIN_AGE_YEARS = 2;
 export const MAX_AGE_YEARS = 30;
 /** Pre-registration for next term is normal; a year ahead is the limit. */
 export const MAX_FUTURE_ENROLMENT_DAYS = 366;
+/** A class change or a leaving date can be scheduled at most this far ahead: a typo ("2099") must not strand a student. */
+export const MAX_EFFECTIVE_DAYS_AHEAD = 366;
 
 export function validateDateOfBirth(dob: string, today: string): Problem | null {
   if (!isIsoDate(dob)) return problem("invalid_date", "Date of birth is not a real date.", "dateOfBirth");
@@ -124,6 +126,14 @@ export type PlacementPlan =
 
 const fail = (p: Problem): { ok: false; problem: Problem } => ({ ok: false, problem: p });
 
+/** An effective date more than a year ahead is almost certainly a typo, and nothing can reopen a placement closed that far out. */
+function tooFarAhead(from: string, today: string): Problem | null {
+  if (daysBetween(today, from) > MAX_EFFECTIVE_DAYS_AHEAD) {
+    return problem("effective_date_too_far", "That date is more than a year ahead. Please check it.", "effectiveFrom");
+  }
+  return null;
+}
+
 export interface PlacementInput {
   today: string;
   student: { status: StudentStatus; enrolmentDate: string };
@@ -136,8 +146,9 @@ export interface PlacementInput {
 /**
  * Place an unplaced student in a class, or move a placed one.
  *
- * - A MOVE is never retroactive: it cannot start before today, and it must start after the day the student joined
- *   their current class. The default is tomorrow, so a register already open on a teacher's phone today still matches.
+ * - A MOVE starts tomorrow at the earliest, never today or in the past, and it must start after the day the student's
+ *   current placement began. Every register that exists or could still be waiting on a teacher's phone is dated today
+ *   or earlier, so a move can never strand one. The default is tomorrow; the latest is a year ahead.
  * - A FIRST placement (the student has no open enrolment) may be dated in the past, because the head is catching up
  *   the records; the database refuses it if it would overlap an existing enrolment.
  */
@@ -159,12 +170,21 @@ export function planPlacement(input: PlacementInput): PlacementPlan {
     if (latest.classId === target.id) return fail(problem("already_in_class", "The student is already in that class.", "classId"));
     from = input.effectiveFrom ?? addDays(today, 1);
     if (from < today) {
-      return fail(problem("retroactive_move", "A class change cannot take effect in the past. Pick today or a later date.", "effectiveFrom"));
+      return fail(problem("retroactive_move", "A class change cannot take effect in the past. Pick tomorrow or a later date.", "effectiveFrom"));
     }
+    if (from === today) {
+      return fail(problem(
+        "move_starts_today",
+        "A class change takes effect from tomorrow at the earliest, so registers taken or saved on teachers' phones today stay correct. Pick tomorrow or a later date.",
+        "effectiveFrom",
+      ));
+    }
+    const far = tooFarAhead(from, today);
+    if (far) return fail(far);
     if (from <= latest.startsOn) {
       return fail(problem(
         "move_before_current_start",
-        `The student joined their current class on ${latest.startsOn}. Pick a later date, or remove that placement first if it was a mistake.`,
+        `The student's current placement starts on ${latest.startsOn}. Pick a later date, or remove that placement first if it was a mistake.`,
         "effectiveFrom",
       ));
     }
@@ -174,6 +194,8 @@ export function planPlacement(input: PlacementInput): PlacementPlan {
     if (student.enrolmentDate > earliest) earliest = student.enrolmentDate;
     if (input.effectiveFrom !== undefined) {
       from = input.effectiveFrom;
+      const far = tooFarAhead(from, today);
+      if (far) return fail(far);
       if (from < student.enrolmentDate) {
         return fail(problem("before_enrolment_date", `The student was enrolled on ${student.enrolmentDate}; they cannot be in a class before that.`, "effectiveFrom"));
       }
@@ -211,7 +233,7 @@ export interface StatusInput {
   student: { status: StudentStatus };
   enrolments: readonly EnrolmentSpan[];
   next: StudentStatus;
-  /** First day the student is no longer in their class. Defaults to tomorrow. Only used when leaving. */
+  /** First day the student is no longer in their class. Defaults to tomorrow; today is refused when a class placement has to end. Only used when leaving. */
   effectiveFrom?: string;
 }
 
@@ -231,14 +253,23 @@ export function planStatusChange(input: StatusInput): StatusPlan {
   if (!leaving) return { ok: true, status: next, effectiveFrom: today };
 
   const from = input.effectiveFrom ?? addDays(today, 1);
-  if (from < today) return fail(problem("retroactive_change", "A status change cannot take effect in the past. Pick today or a later date.", "effectiveFrom"));
+  if (from < today) return fail(problem("retroactive_change", "A status change cannot take effect in the past. Pick tomorrow or a later date.", "effectiveFrom"));
+  const far = tooFarAhead(from, today);
+  if (far) return fail(far);
 
   const latest = latestEnrolment(enrolments);
   if (latest === null || latest.endsOn !== null) return { ok: true, status: next, effectiveFrom: from };
+  if (from === today) {
+    return fail(problem(
+      "change_starts_today",
+      "A student leaves their class from tomorrow at the earliest, so registers taken or saved on teachers' phones today stay correct. Pick tomorrow or a later date.",
+      "effectiveFrom",
+    ));
+  }
   if (from <= latest.startsOn) {
     return fail(problem(
       "change_before_current_start",
-      `The student joined their current class on ${latest.startsOn}. Pick a later date, or remove that placement first if it was a mistake.`,
+      `The student's current placement starts on ${latest.startsOn}. Pick a later date, or remove that placement first if it was a mistake.`,
       "effectiveFrom",
     ));
   }
@@ -251,17 +282,30 @@ export function planStatusChange(input: StatusInput): StatusPlan {
   };
 }
 
-export type RemovalPlan = { ok: true } | { ok: false; problem: Problem };
+export type RemovalPlan =
+  | {
+      ok: true;
+      /**
+       * The placement just before the removed one ended the day before it began, which is what a MOVE does, so removing
+       * the mistaken move puts the student back where they were. Absent when there is nothing sensible to restore.
+       */
+      restore?: { enrolmentId: string };
+    }
+  | { ok: false; problem: Problem };
 
 /**
  * Remove a mistaken placement. Only the most recent placement can be removed, and only if no register was ever
  * taken for the student while they were in it: attendance history is never deleted or orphaned.
+ * If that placement was a move, the previous placement is reopened so the student is not left on no roster.
  */
 export function planPlacementRemoval(input: {
   enrolments: readonly EnrolmentSpan[];
   enrolmentId: string;
   /** The service looked: does the student have any attendance dated within this enrolment? */
   hasAttendanceInSpan: boolean;
+  studentStatus: StudentStatus;
+  /** Status of the class of the placement before the removed one (a hidden, archived class is never reopened). */
+  previousClassStatus: "active" | "archived" | null;
 }): RemovalPlan {
   const target = input.enrolments.find((e) => e.id === input.enrolmentId);
   if (!target) return fail(problem("not_found", "That placement does not exist."));
@@ -270,6 +314,13 @@ export function planPlacementRemoval(input: {
   }
   if (input.hasAttendanceInSpan) {
     return fail(problem("placement_has_attendance", "Attendance has already been recorded while the student was in this class, so the placement cannot be removed. Move the student instead."));
+  }
+  const previous = latestEnrolment(input.enrolments.filter((e) => e.id !== target.id));
+  if (
+    previous !== null && previous.endsOn === addDays(target.startsOn, -1) &&
+    input.studentStatus === "enrolled" && input.previousClassStatus === "active"
+  ) {
+    return { ok: true, restore: { enrolmentId: previous.id } };
   }
   return { ok: true };
 }

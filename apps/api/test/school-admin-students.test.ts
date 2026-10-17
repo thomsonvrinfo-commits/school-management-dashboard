@@ -266,10 +266,14 @@ test("moves are never retroactive, never into the class they are already in, and
   expectError(await place(s.id, { classId: classB, effectiveFrom: "soon" }), 400, "invalid_request", "effectiveFrom");
   expectError(await place(s.id, { classId: crypto.randomUUID() }), 400, "class_not_found", "classId");
   expectError(await place(s.id, { classId: EXTRA.otherClass }), 400, "class_not_found", "classId");
-  // a register was already taken today: the student cannot leave 4A as of today
-  await record(s.id, classA, TODAY, "absent");
-  expectError(await place(s.id, { classId: classB, effectiveFrom: TODAY }), 409, "attendance_after_effective_date", "effectiveFrom");
-  expectOk(await place(s.id, { classId: classB, effectiveFrom: TOMORROW }), 201);
+  // a class change never takes effect today: registers saved on a phone today must still match the class they were taken for
+  expectError(await place(s.id, { classId: classB, effectiveFrom: TODAY }), 400, "move_starts_today", "effectiveFrom");
+  // defence in depth: if a register exists on or after the effective date (impossible through sync, which refuses future
+  // dates, but possible after a timezone edit or a direct data fix) the move is refused rather than orphaning it
+  await record(s.id, classA, "2026-10-12", "absent");
+  expectError(await place(s.id, { classId: classB, effectiveFrom: "2026-10-12" }), 409, "attendance_after_effective_date", "effectiveFrom");
+  expectError(await place(s.id, { classId: classB, effectiveFrom: TOMORROW }), 409, "attendance_after_effective_date", "effectiveFrom");
+  expectOk(await place(s.id, { classId: classB, effectiveFrom: "2026-10-13" }), 201);
   assert.equal((await detail(s.id)).placements.length, 2, "only the valid move happened");
 });
 
@@ -295,13 +299,16 @@ test("status changes: date rules and the attendance guard", { skip }, async () =
   expectError(await change({ status: "transferred", effectiveFrom: "2026-10-01" }), 400, "retroactive_change", "effectiveFrom");
   expectError(await change({ status: "bogus" }), 400, "invalid_request", "status");
   expectError(await change({ status: "transferred", effectiveFrom: "tomorrow" }), 400, "invalid_request", "effectiveFrom");
-  await record(s.id, classB, TODAY);
-  expectError(await change({ status: "transferred", effectiveFrom: TODAY }), 409, "attendance_after_effective_date", "effectiveFrom");
-  const ok = expectOk(await change({ status: "transferred", effectiveFrom: TOMORROW })).body;
-  assert.deepEqual([ok.status, ok.placements[0].endsOn], ["transferred", TODAY]);
+  expectError(await change({ status: "transferred", effectiveFrom: TODAY }), 400, "change_starts_today", "effectiveFrom");
+  expectError(await change({ status: "transferred", effectiveFrom: "2099-01-01" }), 400, "effective_date_too_far", "effectiveFrom");
+  assert.equal((await detail(s.id)).status, "enrolled", "a refused change changed nothing");
+  await record(s.id, classB, "2026-10-12"); // see the move test: the register guard is a second line of defence
+  expectError(await change({ status: "transferred", effectiveFrom: "2026-10-12" }), 409, "attendance_after_effective_date", "effectiveFrom");
+  const ok = expectOk(await change({ status: "transferred", effectiveFrom: "2026-10-13" })).body;
+  assert.deepEqual([ok.status, ok.placements[0].endsOn], ["transferred", "2026-10-12"]);
   // sideways between leaving states is a status change only
   assert.equal(expectOk(await change({ status: "graduated" })).body.status, "graduated");
-  assert.equal((await detail(s.id)).placements[0].endsOn, TODAY);
+  assert.equal((await detail(s.id)).placements[0].endsOn, "2026-10-12");
 });
 
 test("a placement made by mistake can be removed, unless registers exist for it", { skip }, async () => {
@@ -320,8 +327,43 @@ test("a placement made by mistake can be removed, unless registers exist for it"
   const m = expectOk(await register({ admissionNo: "RM-2", firstName: "Two", lastName: "Steps", classId: classA }), 201).body;
   const moved = expectOk(await place(m.id, { classId: classB }), 201).body;
   expectError(await call(f, f.head, "DELETE /v1/students/:id/placements/:placementId", { params: { id: m.id, placementId: moved.placements[0].id } }), 409, "not_latest_placement");
-  expectOk(await call(f, f.head, "DELETE /v1/students/:id/placements/:placementId", { params: { id: m.id, placementId: moved.placements[1].id } }));
-  assert.deepEqual((await detail(m.id)).placements.map((p: { className: string; endsOn: string | null }) => [p.className, p.endsOn]), [["Grade 4A", TODAY]], "the earlier placement stays closed");
+  const undone = expectOk(await call(f, f.head, "DELETE /v1/students/:id/placements/:placementId", { params: { id: m.id, placementId: moved.placements[1].id } })).body;
+  assert.deepEqual(undone.placements.map((p: { className: string; endsOn: string | null }) => [p.className, p.endsOn]), [["Grade 4A", null]], "removing a mistaken move puts the student back where they were");
+  assert.equal(undone.currentClass.name, "Grade 4A");
+  assert.ok((await rosterIds(classA, TOMORROW)).includes(m.id), "still on 4A's register from tomorrow, not left on no roster");
+  assert.ok(!(await rosterIds(classB, TOMORROW)).includes(m.id));
+  assert.ok((await f.t.runner.query<{ details: { restoredPlacementId?: string } }>(`select details from audit_log where entity_id = $1 and action = 'student.placement_removed'`, [m.id])).some((r) => r.details.restoredPlacementId === moved.placements[0].id), "the audit trail says what was restored");
+});
+
+test("removing a mistaken move does not reopen a class that has been archived since, nor after a gap", { skip }, async () => {
+  const archived = await makeClass("Grade 4Z", "4", "Z");
+  const a = expectOk(await register({ admissionNo: "RM-3", firstName: "Gone", lastName: "Class", classId: archived }), 201).body;
+  const moved = expectOk(await place(a.id, { classId: classB }), 201).body;
+  await f.t.runner.query(`update classes set status = 'archived' where id = $1`, [archived]); // a head can only do this once nobody is left in it
+  const res = expectOk(await call(f, f.head, "DELETE /v1/students/:id/placements/:placementId", { params: { id: a.id, placementId: moved.placements[1].id } })).body;
+  assert.deepEqual(res.placements.map((p: { className: string; endsOn: string | null }) => [p.className, p.endsOn]), [["Grade 4Z", TODAY]], "left unplaced for the head to decide");
+  assert.equal(res.currentClass.name, "Grade 4Z", "still on today's register until the old placement ends");
+
+  // a student who left, was re-enrolled and placed again after a gap is not pushed back into the class they left
+  const g = expectOk(await register({ admissionNo: "RM-4", firstName: "Gap", lastName: "Year", classId: classA, enrolmentDate: "2026-01-12", classStartsOn: "2026-02-02" }), 201).body;
+  await f.t.runner.query(`update enrollments set ends_on = '2026-09-30' where student_id = $1`, [g.id]);
+  const again = expectOk(await place(g.id, { classId: classB }), 201).body;
+  const lastId = again.placements[1].id;
+  const afterGap = expectOk(await call(f, f.head, "DELETE /v1/students/:id/placements/:placementId", { params: { id: g.id, placementId: lastId } })).body;
+  assert.deepEqual(afterGap.placements.map((p: { endsOn: string | null }) => p.endsOn), ["2026-09-30"]);
+});
+
+test("a date typed wrongly cannot strand a student: leaving or moving is capped at a year ahead, and refused changes change nothing", { skip }, async () => {
+  const s = expectOk(await register({ admissionNo: "TY-1", firstName: "Typo", lastName: "Case", classId: classA }), 201).body;
+  const status = (body: Record<string, unknown>) => call(f, f.head, "POST /v1/students/:id/status", { params: { id: s.id }, body });
+  expectError(await status({ status: "withdrawn", effectiveFrom: "2099-01-01" }), 400, "effective_date_too_far", "effectiveFrom");
+  // a legacy class (created before years existed) has no year to bound a move, so the cap is what protects it
+  expectError(await place(s.id, { classId: EXTRA.class5A, effectiveFrom: "2999-01-01" }), 400, "effective_date_too_far", "effectiveFrom");
+  const after = await detail(s.id);
+  assert.deepEqual([after.status, after.placements.length, after.placements[0].endsOn], ["enrolled", 1, null], "nothing was closed");
+  // the last day inside the cap works, and the student can then be placed again from there
+  const moved = expectOk(await place(s.id, { classId: EXTRA.class5A, effectiveFrom: "2027-10-09" }), 201).body;
+  assert.deepEqual(moved.placements.map((p: { endsOn: string | null }) => p.endsOn), ["2027-10-08", null]);
 });
 
 test("two admins placing the same student at once cannot leave them in two classes", { skip }, async () => {

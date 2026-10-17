@@ -22,7 +22,7 @@ export const todayOf = (deps: Deps, auth: AuthContext): string => todayInTimezon
 /** Rule failures that are about the current STATE of the data (so: conflict) rather than about the shape of the input. */
 const CONFLICTS = new Set([
   "already_in_class", "class_archived", "student_not_enrolled", "move_before_current_start", "change_before_current_start",
-  "overlaps_enrolment", "no_change", "class_has_students", "class_year_locked", "year_before_enrolments", "class_year_ended",
+  "overlaps_enrolment", "no_change", "class_has_students", "class_year_locked", "year_excludes_history", "class_year_ended",
   "not_latest_placement", "placement_has_attendance",
 ]);
 

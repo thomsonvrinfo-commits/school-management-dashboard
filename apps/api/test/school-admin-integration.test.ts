@@ -223,3 +223,123 @@ test("Slice 1 responses keep parsing with the Slice 1 contracts while Slice 2 da
   bootstrapResponse.parse(await bootstrap(f.deps, f.chipo.auth));
   pushResponse.parse(await pushAs(f.chipo, DEVICES.chipo, cls, [{ studentId: kid.id, status: "present" }], TODAY));
 });
+
+// ---------- a register being saved while the head changes the student's placement ----------
+// These run two real database sessions against each other. Whoever reaches the student's placement second must WAIT for the
+// first to finish and then decide on what it left, never on a read that is already out of date.
+
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => (resolve = r));
+  return { promise, resolve };
+};
+const untilSomeoneWaitsOnALock = async () => {
+  for (let i = 0; i < 100; i++) {
+    const [row] = await f.t.runner.query<{ n: number }>(`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`);
+    if (row!.n > 0) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.fail("expected a database session to be waiting on a lock, but none is");
+};
+const insertRegister = (tx: { insertAttendance: (w: never) => Promise<unknown> }, studentId: string, classId: string, date: string) =>
+  tx.insertAttendance({ schoolId: DEV_IDS.school, studentId, classId, date, status: "present", recordedBy: DEV_IDS.teacher, deviceId: "dev-test-0001", opId: crypto.randomUUID() } as never);
+
+test("race: a register being saved wins over a move that was decided before it committed (the move is refused, nothing is orphaned)", { skip }, async () => {
+  const oldCls = await makeClass("Race Old");
+  const newCls = await makeClass("Race New");
+  const kid = await register("RC-A", oldCls);
+  const held = deferred();
+  const gate = deferred();
+  // a push that has checked the student is in Race Old on the 9th (just past midnight, while the head's clock still says the 8th)
+  const saving = f.deps.db.transaction(async (tx) => {
+    const enrolled = await tx.enrolledStudents(DEV_IDS.school, [oldCls], NEXT_DAY, { lock: true });
+    assert.ok(enrolled.some((s) => s.id === kid.id));
+    held.resolve();
+    await gate.promise;
+    await insertRegister(tx, kid.id, oldCls, NEXT_DAY);
+  });
+  await held.promise;
+  const moving = call(f, f.head, "POST /v1/students/:id/placements", { params: { id: kid.id }, body: { classId: newCls, effectiveFrom: NEXT_DAY } });
+  await untilSomeoneWaitsOnALock();
+  gate.resolve();
+  await saving;
+  const res = await moving;
+  assert.equal(res.status, 409, JSON.stringify(res.body));
+  assert.equal(res.body.error.code, "attendance_after_effective_date");
+
+  const placements = await f.t.runner.query<{ class_id: string; ends_on: string | null }>(`select class_id, to_char(ends_on, 'YYYY-MM-DD') as ends_on from enrollments where student_id = $1`, [kid.id]);
+  assert.deepEqual(placements.map((p) => [p.class_id, p.ends_on]), [[oldCls, null]], "the placement was not touched");
+  assert.equal((await f.t.runner.query<{ n: number }>(`select count(*)::int as n from attendance_records where student_id = $1 and class_id = $2`, [kid.id, oldCls]))[0]!.n, 1);
+});
+
+test("race: removing a placement waits for a register being saved for it, then refuses", { skip }, async () => {
+  const cls = await makeClass("Race Remove");
+  const kid = await register("RC-R", cls);
+  const placementId = (await f.t.runner.query<{ id: string }>(`select id from enrollments where student_id = $1`, [kid.id]))[0]!.id;
+  const held = deferred();
+  const gate = deferred();
+  const saving = f.deps.db.transaction(async (tx) => {
+    assert.ok((await tx.enrolledStudents(DEV_IDS.school, [cls], TODAY, { lock: true })).some((s) => s.id === kid.id));
+    held.resolve();
+    await gate.promise;
+    await insertRegister(tx, kid.id, cls, TODAY);
+  });
+  await held.promise;
+  const removing = call(f, f.head, "DELETE /v1/students/:id/placements/:placementId", { params: { id: kid.id, placementId } });
+  await untilSomeoneWaitsOnALock();
+  gate.resolve();
+  await saving;
+  const res = await removing;
+  assert.equal(res.status, 409, JSON.stringify(res.body));
+  assert.equal(res.body.error.code, "placement_has_attendance");
+  assert.equal((await f.t.runner.query<{ n: number }>(`select count(*)::int as n from enrollments where student_id = $1`, [kid.id]))[0]!.n, 1);
+});
+
+test("race: the real push waits for a placement change in progress and decides on its result", { skip }, async () => {
+  const cls = await makeClass("Race Push");
+  const newCls = await makeClass("Race Push 2");
+  await assign(cls, DEV_IDS.teacher);
+  const stays = await register("RC-S", cls);
+  const leaves = await register("RC-L", cls);
+
+  // (1) the head's change ends the student's placement before today: the push must not use its earlier read of "enrolled"
+  {
+    const held = deferred();
+    const gate = deferred();
+    const changing = f.deps.admin.transaction(async (tx) => {
+      const [open] = (await tx.listEnrolments(DEV_IDS.school, leaves.id, { lock: true })).filter((e) => e.endsOn === null);
+      await tx.closeEnrolment(DEV_IDS.school, open!.id, "2026-10-07"); // the service refuses this date; a direct data fix could do it
+      held.resolve();
+      await gate.promise;
+    });
+    await held.promise;
+    const pushing = pushAs(f.chipo, DEVICES.chipo, cls, [{ studentId: stays.id, status: "present" }, { studentId: leaves.id, status: "present" }], TODAY);
+    await untilSomeoneWaitsOnALock();
+    gate.resolve();
+    await changing;
+    const r = only((await pushing).results);
+    assert.deepEqual([r.outcome, r.reason], ["rejected", "invalid"], "the student is no longer enrolled, so the operation is refused, not applied on a stale read");
+    assert.equal((await f.t.runner.query<{ n: number }>(`select count(*)::int as n from attendance_records where class_id = $1`, [cls]))[0]!.n, 0);
+  }
+
+  // (2) a change that does not touch today (a move from tomorrow): the push waits for it to commit, then is applied as usual
+  {
+    const held = deferred();
+    const gate = deferred();
+    const changing = f.deps.admin.transaction(async (tx) => {
+      const [open] = (await tx.listEnrolments(DEV_IDS.school, stays.id, { lock: true })).filter((e) => e.endsOn === null);
+      await tx.closeEnrolment(DEV_IDS.school, open!.id, TODAY);
+      await tx.insertEnrolment({ id: crypto.randomUUID(), schoolId: DEV_IDS.school, studentId: stays.id, classId: newCls, startsOn: NEXT_DAY, createdBy: DEV_IDS.head });
+      held.resolve();
+      await gate.promise;
+    });
+    await held.promise;
+    const pushing = pushAs(f.chipo, DEVICES.chipo, cls, [{ studentId: stays.id, status: "present" }], TODAY);
+    await untilSomeoneWaitsOnALock();
+    gate.resolve();
+    await changing;
+    assert.equal(only((await pushing).results).outcome, "applied", "today's register is still valid: the move starts tomorrow");
+    const [row] = await f.t.runner.query<{ class_id: string }>(`select class_id from attendance_records where student_id = $1`, [stays.id]);
+    assert.equal(row!.class_id, cls);
+  }
+});

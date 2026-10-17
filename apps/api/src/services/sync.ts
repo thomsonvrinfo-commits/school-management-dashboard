@@ -80,7 +80,8 @@ async function applyAttendance(deps: Deps, tx: Store, auth: AuthContext, deviceI
 
   const ids = entries.map((e) => e.studentId);
   if (new Set(ids).size !== ids.length) return rejected(op.opId, "invalid");
-  const enrolled = new Set((await tx.enrolledStudents(schoolId, [classId], date)).map((s) => s.id));
+  // Locked: a placement being changed by an administrator right now either finishes first (and this check sees it) or waits for this commit.
+  const enrolled = new Set((await tx.enrolledStudents(schoolId, [classId], date, { lock: true })).map((s) => s.id));
   if (ids.some((id) => !enrolled.has(id))) return rejected(op.opId, "invalid");
 
   const stored = new Map((await tx.lockAttendance(schoolId, ids, date)).map((r) => [r.studentId, r]));

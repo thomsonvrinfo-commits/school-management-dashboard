@@ -135,7 +135,7 @@ test("edit: only what is sent changes; a blank stream clears it; duplicates and 
 test("a class from before academic years existed can be given one, once; after that the year is fixed", { skip }, async () => {
   // Grade 5A was created by Slice 1: no year, one student enrolled since 2026-01-12.
   assert.equal((await getClass(EXTRA.class5A)).academicYear, null);
-  expectError(await patchClass(EXTRA.class5A, { academicYearId: y2025 }), 409, "year_before_enrolments", "academicYearId");
+  expectError(await patchClass(EXTRA.class5A, { academicYearId: y2025 }), 409, "year_excludes_history", "academicYearId");
   expectError(await patchClass(EXTRA.class5A, { academicYearId: crypto.randomUUID() }), 400, "academic_year_not_found", "academicYearId");
   const dated = expectOk(await patchClass(EXTRA.class5A, { academicYearId: y2026 })).body;
   assert.equal(dated.academicYear.name, "2026");

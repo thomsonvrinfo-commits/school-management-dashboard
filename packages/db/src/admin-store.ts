@@ -114,14 +114,24 @@ export interface AdminStore {
   // ---- students ----
   listStudents(schoolId: string, filter: StudentFilter, today: string, limit: number, offset: number): Promise<Page<StudentListRow>>;
   getStudent(schoolId: string, id: string): Promise<AdminStudentRow | null>;
-  /** Like getStudent, but takes a row lock so concurrent placement/status changes for one student queue up. */
+  /**
+   * Like getStudent, but takes a row lock so concurrent placement/status changes for one student queue up.
+   * "No key update" on purpose: it queues admins against each other without blocking the foreign-key checks of a
+   * register being saved at the same moment.
+   */
   lockStudent(schoolId: string, id: string): Promise<AdminStudentRow | null>;
   insertStudent(s: NewStudent): Promise<void>;
   updateStudent(schoolId: string, id: string, patch: StudentPatch): Promise<void>;
   setStudentStatus(schoolId: string, id: string, status: StudentStatus): Promise<void>;
-  listEnrolments(schoolId: string, studentId: string): Promise<EnrolmentRow[]>;
+  /**
+   * `lock: true` also locks the rows against a register being saved for them (the push path takes the matching share
+   * lock): whoever comes second waits, so a move can never be decided on a register check that is already stale.
+   */
+  listEnrolments(schoolId: string, studentId: string, opts?: { lock?: boolean }): Promise<EnrolmentRow[]>;
   insertEnrolment(e: NewEnrolment): Promise<void>;
   closeEnrolment(schoolId: string, id: string, endsOn: string): Promise<void>;
+  /** Make a closed placement open-ended again (used when the placement that replaced it is removed). */
+  reopenEnrolment(schoolId: string, id: string): Promise<void>;
   deleteEnrolment(schoolId: string, id: string): Promise<boolean>;
   /** Is there any register entry for this student dated within [from, to] (`to` null = no upper bound)? */
   studentHasAttendanceBetween(schoolId: string, studentId: string, from: string, to: string | null): Promise<boolean>;
@@ -137,7 +147,8 @@ export interface AdminStore {
   classHasAttendance(schoolId: string, id: string): Promise<boolean>;
   /** Placements that have not finished: still open, or ending today or later (includes ones starting in the future). */
   classLiveEnrolmentCount(schoolId: string, id: string, today: string): Promise<number>;
-  classEnrolmentStarts(schoolId: string, id: string): Promise<string[]>;
+  /** Earliest and latest date any placement or register of this class touches (placement starts and ends, register dates). */
+  classActivityBounds(schoolId: string, id: string): Promise<{ firstDate: string | null; lastDate: string | null }>;
 
   // ---- teachers ----
   listTeachers(schoolId: string): Promise<TeacherRow[]>;

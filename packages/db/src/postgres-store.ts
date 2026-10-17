@@ -122,7 +122,7 @@ export class PostgresStore implements Store {
     return rows.length > 0;
   }
 
-  async enrolledStudents(schoolId: string, classIds: readonly string[], onDate: string): Promise<StudentRow[]> {
+  async enrolledStudents(schoolId: string, classIds: readonly string[], onDate: string, opts: { lock?: boolean } = {}): Promise<StudentRow[]> {
     if (classIds.length === 0) return [];
     return this.db.query<StudentRow>(
       `select s.id, e.class_id as "classId", s.admission_no as "admissionNo",
@@ -130,7 +130,7 @@ export class PostgresStore implements Store {
          from enrollments e join students s on s.school_id = e.school_id and s.id = e.student_id
         where e.school_id = $1 and e.class_id = any($2::uuid[]) and s.active
           and e.starts_on <= $3::date and (e.ends_on is null or e.ends_on >= $3::date)
-        order by s.last_name, s.first_name`,
+        order by s.last_name, s.first_name${opts.lock ? "\n          for share of e" : ""}`,
       [schoolId, uuidArray(classIds), onDate],
     );
   }

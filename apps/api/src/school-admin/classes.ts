@@ -88,7 +88,7 @@ export async function updateClass(deps: Deps, auth: AuthContext, id: string, pat
         ensure(validateClassYearChange({
           currentYearId, nextYearId: patch.academicYearId,
           hasEnrolments: await tx.classHasEnrolments(schoolId, id), hasAttendance: await tx.classHasAttendance(schoolId, id),
-          enrolmentStarts: await tx.classEnrolmentStarts(schoolId, id), nextYear,
+          activity: await tx.classActivityBounds(schoolId, id), nextYear,
         }));
       }
       if (patch.status === "archived" && cur.status !== "archived") {

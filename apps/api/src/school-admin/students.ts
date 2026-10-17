@@ -4,7 +4,7 @@ import type {
 } from "@schoolpulse/contracts";
 import type { AdminStore, AdminStudentRow, StudentPatch } from "@schoolpulse/db";
 import {
-  enrolmentOn, normaliseAdmissionNo, normalisePersonName, planPlacement, planPlacementRemoval, planStatusChange, validateAdmissionNo,
+  enrolmentOn, latestEnrolment, normaliseAdmissionNo, normalisePersonName, planPlacement, planPlacementRemoval, planStatusChange, validateAdmissionNo,
   validateDateOfBirth, validateEnrolmentDate, validatePersonName, type AttendanceGuard, type PlacementPlan,
 } from "@schoolpulse/domain";
 import type { Deps } from "../deps.ts";
@@ -166,7 +166,8 @@ export async function changeStudentStatus(deps: Deps, auth: AuthContext, id: str
     deps.admin.transaction(async (tx) => {
       const s = await tx.lockStudent(schoolId, id);
       if (!s) throw new HttpError(404, "not_found", "Student not found.");
-      const enrolments = await tx.listEnrolments(schoolId, id);
+      // Hold the placements before the register check: a register being saved right now either lands first (and is seen) or waits.
+      const enrolments = await tx.listEnrolments(schoolId, id, { lock: true });
       const plan = planStatusChange({ today, student: { status: s.status }, enrolments, next: req.status, effectiveFrom: req.effectiveFrom });
       if (!plan.ok) throw httpFromProblem(plan.problem);
       await checkGuard(tx, schoolId, id, plan.guard, "effectiveFrom");
@@ -191,7 +192,8 @@ export async function placeStudent(deps: Deps, auth: AuthContext, id: string, re
       const s = await tx.lockStudent(schoolId, id);
       if (!s) throw new HttpError(404, "not_found", "Student not found.");
       const cls = (await tx.getClass(schoolId, req.classId, today))!;
-      const enrolments = await tx.listEnrolments(schoolId, id);
+      // Hold the placements before the register check: a register being saved right now either lands first (and is seen) or waits.
+      const enrolments = await tx.listEnrolments(schoolId, id, { lock: true });
       const plan = planPlacement({
         today, student: { status: s.status, enrolmentDate: s.enrolmentDate }, enrolments,
         target: { id: cls.id, status: cls.status, year: cls.academicYear }, effectiveFrom: req.effectiveFrom,
@@ -210,16 +212,27 @@ export async function removePlacement(deps: Deps, auth: AuthContext, id: string,
   requireAction(auth, "student:manage");
   const schoolId = schoolIdOf(auth);
   const today = todayOf(deps, auth);
-  return deps.admin.transaction(async (tx) => {
-    const s = await tx.lockStudent(schoolId, id);
-    if (!s) throw new HttpError(404, "not_found", "Student not found.");
-    const enrolments = await tx.listEnrolments(schoolId, id);
-    const target = enrolments.find((e) => e.id === placementId);
-    const hasAttendance = target ? await tx.studentHasAttendanceBetween(schoolId, id, target.startsOn, target.endsOn) : false;
-    const plan = planPlacementRemoval({ enrolments, enrolmentId: placementId, hasAttendanceInSpan: hasAttendance });
-    if (!plan.ok) throw httpFromProblem(plan.problem);
-    await tx.deleteEnrolment(schoolId, placementId);
-    await audit(tx, auth, "student.placement_removed", "student", id, { classId: target!.classId, startsOn: target!.startsOn });
-    return detailOf(tx, schoolId, s, today);
-  });
+  return withConstraints(studentRules, () =>
+    deps.admin.transaction(async (tx) => {
+      const s = await tx.lockStudent(schoolId, id);
+      if (!s) throw new HttpError(404, "not_found", "Student not found.");
+      // Hold the placements before looking for registers, so a register being saved right now either lands first (and is seen) or waits.
+      const enrolments = await tx.listEnrolments(schoolId, id, { lock: true });
+      const target = enrolments.find((e) => e.id === placementId);
+      const hasAttendance = target ? await tx.studentHasAttendanceBetween(schoolId, id, target.startsOn, target.endsOn) : false;
+      const previous = target ? latestEnrolment(enrolments.filter((e) => e.id !== target.id)) : null;
+      const previousClass = previous ? await tx.getClass(schoolId, previous.classId, today) : null;
+      const plan = planPlacementRemoval({
+        enrolments, enrolmentId: placementId, hasAttendanceInSpan: hasAttendance,
+        studentStatus: s.status, previousClassStatus: previousClass?.status ?? null,
+      });
+      if (!plan.ok) throw httpFromProblem(plan.problem);
+      await tx.deleteEnrolment(schoolId, placementId);
+      if (plan.restore) await tx.reopenEnrolment(schoolId, plan.restore.enrolmentId);
+      await audit(tx, auth, "student.placement_removed", "student", id, {
+        classId: target!.classId, startsOn: target!.startsOn, ...(plan.restore ? { restoredPlacementId: plan.restore.enrolmentId } : {}),
+      });
+      return detailOf(tx, schoolId, s, today);
+    }),
+  );
 }

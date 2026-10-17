@@ -26,12 +26,17 @@ test("a class with students in it today cannot be archived", () => {
 });
 
 test("a class's academic year can be set once, then locks once it has students or registers", () => {
-  const base = { currentYearId: null, nextYearId: "y26", hasEnrolments: false, hasAttendance: false, enrolmentStarts: [], nextYear: { startsOn: "2026-01-13", endsOn: "2026-12-04" } };
+  const base = { currentYearId: null, nextYearId: "y26", hasEnrolments: false, hasAttendance: false, activity: { firstDate: null, lastDate: null }, nextYear: { startsOn: "2026-01-05", endsOn: "2026-12-04" } };
   assert.equal(validateClassYearChange(base), null);
   // legacy class (no year yet) that already has students: allowed, this is how old classes get a year
-  assert.equal(validateClassYearChange({ ...base, hasEnrolments: true, hasAttendance: true, enrolmentStarts: ["2026-01-12"] }), null);
-  // ...unless a student joined after that year ends
-  assert.equal(validateClassYearChange({ ...base, hasEnrolments: true, enrolmentStarts: ["2027-02-01"] })?.code, "year_before_enrolments");
+  assert.equal(validateClassYearChange({ ...base, hasEnrolments: true, hasAttendance: true, activity: { firstDate: "2026-01-12", lastDate: "2026-10-07" } }), null);
+  // ...but the year must contain ALL of the class's history: nothing before it starts or after it ends
+  const late = validateClassYearChange({ ...base, hasEnrolments: true, activity: { firstDate: "2027-02-01", lastDate: "2027-02-01" } });
+  assert.equal(late?.code, "year_excludes_history");
+  assert.match(late!.message, /2027-02-01 to 2027-02-01.*2026-01-05 to 2026-12-04/);
+  assert.equal(validateClassYearChange({ ...base, hasEnrolments: true, activity: { firstDate: "2026-01-04", lastDate: "2026-03-01" } })?.code, "year_excludes_history", "starts a day before the year");
+  assert.equal(validateClassYearChange({ ...base, hasEnrolments: true, activity: { firstDate: "2026-02-01", lastDate: "2026-12-05" } })?.code, "year_excludes_history", "runs a day past the year");
+  assert.equal(validateClassYearChange({ ...base, hasEnrolments: true, activity: { firstDate: "2026-01-05", lastDate: "2026-12-04" } }), null, "exactly the year is fine");
   // a class that already has a year and students is locked to it
   assert.equal(validateClassYearChange({ ...base, currentYearId: "y25", hasEnrolments: true })?.code, "class_year_locked");
   assert.equal(validateClassYearChange({ ...base, currentYearId: "y25", hasAttendance: true })?.code, "class_year_locked");

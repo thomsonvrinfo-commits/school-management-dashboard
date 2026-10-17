@@ -77,7 +77,7 @@ export class PostgresAdminStore implements AdminStore {
   }
 
   async lockSchool(schoolId: string): Promise<void> {
-    await this.db.query(`select 1 from schools where id = $1 for update`, [schoolId]);
+    await this.db.query(`select 1 from schools where id = $1 for no key update`, [schoolId]);
   }
 
   async updateSchool(schoolId: string, patch: SchoolPatch): Promise<SchoolRow> {
@@ -147,6 +147,9 @@ export class PostgresAdminStore implements AdminStore {
       `select ${D("min(x.d)")} as "firstDate", ${D("max(x.d)")} as "lastDate" from (
          select e.starts_on as d from enrollments e join classes c on c.school_id = e.school_id and c.id = e.class_id
           where c.school_id = $1 and c.academic_year_id = $2
+         union all
+         select e.ends_on from enrollments e join classes c on c.school_id = e.school_id and c.id = e.class_id
+          where c.school_id = $1 and c.academic_year_id = $2 and e.ends_on is not null
          union all
          select a.date from attendance_records a join classes c on c.school_id = a.school_id and c.id = a.class_id
           where c.school_id = $1 and c.academic_year_id = $2) x`,
@@ -252,7 +255,7 @@ export class PostgresAdminStore implements AdminStore {
 
   async lockStudent(schoolId: string, id: string): Promise<AdminStudentRow | null> {
     const rows = await this.db.query<AdminStudentRow>(
-      `select ${STUDENT_SELECT} from students where school_id = $1 and id = $2 for update`,
+      `select ${STUDENT_SELECT} from students where school_id = $1 and id = $2 for no key update`,
       [schoolId, id],
     );
     return rows[0] ?? null;
@@ -276,7 +279,7 @@ export class PostgresAdminStore implements AdminStore {
     await this.db.query(`update students set status = $3, updated_at = now() where school_id = $1 and id = $2`, [schoolId, id, status]);
   }
 
-  async listEnrolments(schoolId: string, studentId: string): Promise<EnrolmentRow[]> {
+  async listEnrolments(schoolId: string, studentId: string, opts: { lock?: boolean } = {}): Promise<EnrolmentRow[]> {
     const rows = await this.db.query<{
       id: string; studentId: string; classId: string; className: string; yearId: string | null; yearName: string | null;
       startsOn: string; endsOn: string | null;
@@ -287,7 +290,7 @@ export class PostgresAdminStore implements AdminStore {
          join classes c on c.school_id = e.school_id and c.id = e.class_id
          left join academic_years y on y.school_id = c.school_id and y.id = c.academic_year_id
         where e.school_id = $1 and e.student_id = $2
-        order by e.starts_on, e.id`,
+        order by e.starts_on, e.id${opts.lock ? "\n          for no key update of e" : ""}`,
       [schoolId, studentId],
     );
     return rows.map((r) => ({
@@ -306,6 +309,10 @@ export class PostgresAdminStore implements AdminStore {
 
   async closeEnrolment(schoolId: string, id: string, endsOn: string): Promise<void> {
     await this.db.query(`update enrollments set ends_on = $3::date where school_id = $1 and id = $2`, [schoolId, id, endsOn]);
+  }
+
+  async reopenEnrolment(schoolId: string, id: string): Promise<void> {
+    await this.db.query(`update enrollments set ends_on = null where school_id = $1 and id = $2`, [schoolId, id]);
   }
 
   async deleteEnrolment(schoolId: string, id: string): Promise<boolean> {
@@ -391,7 +398,7 @@ export class PostgresAdminStore implements AdminStore {
   }
 
   async lockClass(schoolId: string, id: string): Promise<boolean> {
-    const rows = await this.db.query(`select 1 from classes where school_id = $1 and id = $2 for update`, [schoolId, id]);
+    const rows = await this.db.query(`select 1 from classes where school_id = $1 and id = $2 for no key update`, [schoolId, id]);
     return rows.length > 0;
   }
 
@@ -424,12 +431,17 @@ export class PostgresAdminStore implements AdminStore {
     return rows[0]!.n;
   }
 
-  async classEnrolmentStarts(schoolId: string, id: string): Promise<string[]> {
-    const rows = await this.db.query<{ d: string }>(
-      `select distinct ${D("starts_on")} as d from enrollments where school_id = $1 and class_id = $2 order by d`,
+  async classActivityBounds(schoolId: string, id: string): Promise<{ firstDate: string | null; lastDate: string | null }> {
+    const rows = await this.db.query<{ firstDate: string | null; lastDate: string | null }>(
+      `select ${D("min(x.d)")} as "firstDate", ${D("max(x.d)")} as "lastDate" from (
+         select starts_on as d from enrollments where school_id = $1 and class_id = $2
+         union all
+         select ends_on from enrollments where school_id = $1 and class_id = $2 and ends_on is not null
+         union all
+         select date from attendance_records where school_id = $1 and class_id = $2) x`,
       [schoolId, id],
     );
-    return rows.map((r) => r.d);
+    return rows[0]!;
   }
 
   // ---------- teachers ----------

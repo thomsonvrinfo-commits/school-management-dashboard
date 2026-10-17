@@ -50,14 +50,16 @@ export interface ClassYearChangeInput {
   nextYearId: string | null;
   hasEnrolments: boolean;
   hasAttendance: boolean;
-  /** Dates the class's enrolments started on (to make sure none starts after the new year ends). */
-  enrolmentStarts: readonly string[];
+  /** Earliest and latest date any placement or register of the class touches (null/null for a class with no history). */
+  activity: { firstDate: string | null; lastDate: string | null };
   nextYear: { startsOn: string; endsOn: string } | null;
 }
 
 /**
  * Which academic year a class sits in can be set once (for classes created before years existed) and is then fixed
  * as soon as the class has students or registers: moving a class between years would rewrite what those registers mean.
+ * The year it is given must contain all of the class's existing placements and registers; otherwise the class would be
+ * locked to a year that does not describe its own history.
  */
 export function validateClassYearChange(input: ClassYearChangeInput): Problem | null {
   if (input.currentYearId === input.nextYearId) return null;
@@ -67,8 +69,13 @@ export function validateClassYearChange(input: ClassYearChangeInput): Problem | 
   if (input.currentYearId !== null && (input.hasEnrolments || input.hasAttendance)) {
     return problem("class_year_locked", "This class already has students or attendance, so it cannot be moved to a different academic year. Create a new class for that year instead.", "academicYearId");
   }
-  if (input.nextYear && input.enrolmentStarts.some((d) => d > input.nextYear!.endsOn)) {
-    return problem("year_before_enrolments", "Some students joined this class after that academic year ends.", "academicYearId");
+  const { firstDate, lastDate } = input.activity;
+  if (input.nextYear && firstDate && lastDate && (firstDate < input.nextYear.startsOn || lastDate > input.nextYear.endsOn)) {
+    return problem(
+      "year_excludes_history",
+      `This class already has placements or registers from ${firstDate} to ${lastDate}, but that academic year runs ${input.nextYear.startsOn} to ${input.nextYear.endsOn}. Choose a year that covers them, or widen the year first.`,
+      "academicYearId",
+    );
   }
   return null;
 }
