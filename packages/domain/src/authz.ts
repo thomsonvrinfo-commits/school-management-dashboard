@@ -23,6 +23,9 @@ export const ACTIONS = [
   "teacher:read",
   "teacher:assign",
   "teaching:own-classes",
+  // P1: staff accounts
+  "staff:read",
+  "staff:manage",
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -86,6 +89,11 @@ export function authorize(principal: Principal, action: string, resource: Resour
 
     case "teaching:own-classes":
       return principal.role === "teacher" ? allow : deny("role_not_permitted");
+
+    // ---- staff accounts: the head invites and manages teachers; nobody else sees the staff list ----
+    case "staff:read":
+    case "staff:manage":
+      return principal.role === "head" ? allow : deny("role_not_permitted");
 
     default:
       return deny("unknown_action");

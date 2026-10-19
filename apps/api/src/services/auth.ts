@@ -49,11 +49,22 @@ export async function login(deps: Deps, req: LoginRequest): Promise<TokenRespons
     throw new HttpError(409, "school_selection_required", "This account belongs to more than one school; choose one.");
   }
 
+  return startSession(deps, user, membership, req.deviceId);
+}
+
+/**
+ * Opens a session for a person who has just proved who they are (a password, or an invitation they accepted), and hands
+ * back the same tokens a normal sign-in does.
+ */
+export async function startSession(
+  deps: Deps, user: { id: string }, membership: { id: string; schoolId: string }, deviceId: string,
+): Promise<TokenResponse> {
+  const store = deps.db.store;
   const sessionId = deps.newId();
   const refreshToken = newRefreshToken();
   await store.createSession({
     id: sessionId, userId: user.id, schoolId: membership.schoolId, membershipId: membership.id,
-    deviceId: req.deviceId, refreshHash: await hashRefreshToken(refreshToken), expiresAt: refreshExpiry(deps.now()),
+    deviceId, refreshHash: await hashRefreshToken(refreshToken), expiresAt: refreshExpiry(deps.now()),
   });
   const ctx = await store.getActiveContext(sessionId, deps.now().toISOString());
   if (!ctx) throw invalidSession();

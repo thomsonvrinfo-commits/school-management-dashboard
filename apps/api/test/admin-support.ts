@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { DEV_IDS } from "@schoolpulse/db";
 import { SCHOOL_ADMIN_HANDLERS } from "../src/school-admin/handlers.ts";
+import { PUBLIC_STAFF_HANDLERS, STAFF_HANDLERS } from "../src/staff/handlers.ts";
 import { HttpError } from "../src/errors.ts";
 import { EMAILS, EXTRA, PASSWORD, makeFixture, signIn, type Fixture } from "./support.ts";
 
@@ -59,9 +60,20 @@ export interface CallOptions {
  * status and body the `onError` hook would have produced.
  */
 export async function call(f: Fixture, who: Signed, key: string, opts: CallOptions = {}): Promise<Res> {
-  const handler = SCHOOL_ADMIN_HANDLERS[key];
+  const handler = SCHOOL_ADMIN_HANDLERS[key] ?? STAFF_HANDLERS[key];
   assert.ok(handler, `no handler for ${key}`);
-  const req = {
+  return run(() => handler(f.deps, who.auth, requestOf(opts)));
+}
+
+/** Calls an endpoint nobody is signed in to (an invitation or reset link), the way the Hono adapter does. */
+export async function callPublic(f: Fixture, key: string, opts: CallOptions = {}): Promise<Res> {
+  const handler = PUBLIC_STAFF_HANDLERS[key];
+  assert.ok(handler, `no public handler for ${key}`);
+  return run(() => handler(f.deps, requestOf(opts)));
+}
+
+function requestOf(opts: CallOptions) {
+  return {
     params: opts.params ?? {},
     query: opts.query ?? {},
     json: async () => {
@@ -69,8 +81,11 @@ export async function call(f: Fixture, who: Signed, key: string, opts: CallOptio
       return opts.body;
     },
   };
+}
+
+async function run(fn: () => Promise<{ status: number; body?: unknown }>): Promise<Res> {
   try {
-    const r = await handler(f.deps, who.auth, req);
+    const r = await fn();
     return { status: r.status, body: r.body };
   } catch (e) {
     if (e instanceof HttpError) {

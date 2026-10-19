@@ -9,6 +9,8 @@ const skip = pgTestsEnabled() ? false : "no PostgreSQL configured (set PSQL_TEST
 const TODAY = "2026-10-08";
 const all = loadMigrations();
 const only0001 = all.filter((m) => m.name === "0001_init.sql");
+// Later migrations (0003 and on) have their own tests; these tests are about what 0002 does to a Slice 1 database.
+const through0002 = all.filter((m) => m.name <= "0002_school_administration.sql");
 
 test("0002 applies over a database that already holds Slice 1 data, and keeps every row", { skip }, async () => {
   const t = await createTestDatabase({ migrate: false });
@@ -27,7 +29,7 @@ test("0002 applies over a database that already holds Slice 1 data, and keeps ev
       slots: (await t.runner.query<{ n: number }>("select count(*)::int n from timetable_slots"))[0]!.n,
     };
 
-    assert.deepEqual(await migrate(t.runner, all), ["0002_school_administration.sql"]);
+    assert.deepEqual(await migrate(t.runner, through0002), ["0002_school_administration.sql"]);
 
     // nothing Slice 1 owned was lost or rewritten
     const after = {
@@ -73,7 +75,7 @@ test("0002 applies over a database that already holds Slice 1 data, and keeps ev
     assert.ok(old.enrolment_date, "the new NOT NULL column has a default, so old-style inserts still work");
 
     // re-running applies nothing
-    assert.deepEqual(await migrate(t.runner, all), []);
+    assert.deepEqual(await migrate(t.runner, through0002), []);
   } finally {
     await t.drop();
   }
@@ -90,7 +92,7 @@ test("0002 refuses to run over data it would corrupt, and then changes nothing a
       `insert into enrollments (school_id, student_id, class_id, starts_on) values ($1, $2, $3, '2026-02-01')`,
       [DEV_IDS.school, student!.id, DEV_IDS.class6A],
     );
-    await assert.rejects(migrate(t.runner, all), /no_overlap|conflicting key value|exclusion/i);
+    await assert.rejects(migrate(t.runner, through0002), /no_overlap|conflicting key value|exclusion/i);
     // the whole migration rolled back: no new tables, no new columns, and it is not recorded as applied
     const applied = await t.runner.query<{ name: string }>("select name from schema_migrations");
     assert.deepEqual(applied.map((r) => r.name), ["0001_init.sql"]);
@@ -119,7 +121,7 @@ test("pre-flight: a clean Slice 1 database has no blocking findings, and 0002 th
     await migrate(t.runner, only0001);
     await seedDev(t.runner, { today: TODAY, passwordHash: "x" });
     assert.deepEqual(await preflight(t), []);
-    assert.deepEqual(await migrate(t.runner, all), ["0002_school_administration.sql"]);
+    assert.deepEqual(await migrate(t.runner, through0002), ["0002_school_administration.sql"]);
   } finally {
     await t.drop();
   }
@@ -151,7 +153,7 @@ test("pre-flight finds each kind of legacy data that stops 0002, names the rows,
     assert.deepEqual(found.filter((r) => r.severity === "advisory").map((r) => r.problem).sort(), ["grade_level_outside_limits", "student_name_outside_limits"]);
 
     // the findings are not false alarms: the migration fails, and rolls back completely
-    await assert.rejects(migrate(t.runner, all), /unique|no_overlap|exclusion|duplicate/i);
+    await assert.rejects(migrate(t.runner, through0002), /unique|no_overlap|exclusion|duplicate/i);
     assert.deepEqual((await q("select name from schema_migrations") as { name: string }[]).map((r) => r.name), ["0001_init.sql"]);
 
     // fix the data the way the script's output says, one finding at a time; 0002 then applies
@@ -160,7 +162,7 @@ test("pre-flight finds each kind of legacy data that stops 0002, names the rows,
     await q(`update classes set name = 'Grade 7A (second)' where name = 'grade 7a'`);
     await q(`delete from enrollments where student_id = $1 and class_id = $2 and starts_on = '2026-02-01'`, [student!.id, DEV_IDS.class6A]);
     assert.deepEqual((await preflight(t)).filter((r) => r.severity === "blocking"), []);
-    assert.deepEqual(await migrate(t.runner, all), ["0002_school_administration.sql"]);
+    assert.deepEqual(await migrate(t.runner, through0002), ["0002_school_administration.sql"]);
   } finally {
     await t.drop();
   }
@@ -176,7 +178,7 @@ test("pre-flight: placements that merely touch or are back to back are not flagg
     await t.runner.query(`update enrollments set ends_on = '2026-05-31' where student_id = $1`, [student!.id]);
     await t.runner.query(`insert into enrollments (school_id, student_id, class_id, starts_on) values ($1, $2, $3, '2026-06-01')`, [DEV_IDS.school, student!.id, DEV_IDS.class7B]);
     assert.deepEqual(await preflight(t), []);
-    assert.deepEqual(await migrate(t.runner, all), ["0002_school_administration.sql"], "and the migration agrees");
+    assert.deepEqual(await migrate(t.runner, through0002), ["0002_school_administration.sql"], "and the migration agrees");
   } finally {
     await t.drop();
   }

@@ -3,17 +3,17 @@
  * The server validates every request with these; the client uses the inferred types.
  */
 import { z } from "zod";
-import { ATTENDANCE_STATUSES, ROLES } from "@schoolpulse/domain";
-import { isoDate, uuid } from "./primitives.ts";
+import { ATTENDANCE_STATUSES } from "@schoolpulse/domain";
+import { deviceId, isoDate, meResponse, role, tokenResponse, uuid } from "./primitives.ts";
+import type { MeResponse, TokenResponse } from "./primitives.ts";
 
-// Moved to primitives.ts in Slice 2 so admin.ts can share them without an import cycle. Same names, same exports.
-export { isoDate, uuid };
+// Moved to primitives.ts (Slice 2, and again in P1) so admin.ts and staff.ts can share them without an import cycle.
+// Same names, same exports.
+export { deviceId, isoDate, meResponse, role, tokenResponse, uuid };
+export type { MeResponse, TokenResponse };
 export const attendanceStatus = z.enum(ATTENDANCE_STATUSES);
-export const role = z.enum(ROLES);
 
 // ---------- auth ----------
-
-export const deviceId = z.string().min(8).max(64).regex(/^[A-Za-z0-9_-]+$/);
 
 export const loginRequest = z.object({
   email: z.string().email().max(254),
@@ -31,21 +31,6 @@ export const refreshRequest = z.object({
 export type RefreshRequest = z.infer<typeof refreshRequest>;
 
 export const logoutRequest = z.object({ refreshToken: z.string().min(20).max(200) });
-
-export const meResponse = z.object({
-  user: z.object({ id: uuid, name: z.string(), email: z.string() }),
-  school: z.object({ id: uuid, name: z.string(), timezone: z.string() }),
-  role,
-});
-export type MeResponse = z.infer<typeof meResponse>;
-
-export const tokenResponse = z.object({
-  accessToken: z.string(),
-  accessTokenExpiresAt: z.string(),
-  refreshToken: z.string(),
-  me: meResponse,
-});
-export type TokenResponse = z.infer<typeof tokenResponse>;
 
 // ---------- sync: operations pushed from a device ----------
 
@@ -182,3 +167,6 @@ export type ApiError = z.infer<typeof apiError>;
 
 // ---------- Slice 2: school administration ----------
 export * from "./admin.ts";
+
+// ---------- P1: staff onboarding ----------
+export * from "./staff.ts";

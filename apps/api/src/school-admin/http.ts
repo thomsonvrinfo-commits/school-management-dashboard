@@ -5,8 +5,11 @@
  * plain code that the tests run directly against a real database.
  */
 import type { z } from "zod";
+import { roleMayAttempt } from "@schoolpulse/domain";
 import type { Deps } from "../deps.ts";
 import { HttpError } from "../errors.ts";
+import type { RouteSpec } from "../routes.ts";
+import { routeKey } from "../routes.ts";
 import type { AuthContext } from "../services/auth.ts";
 
 export interface AdminRequest {
@@ -21,6 +24,29 @@ export interface AdminResponse {
 }
 
 export type AdminHandler = (deps: Deps, auth: AuthContext, req: AdminRequest) => Promise<AdminResponse>;
+
+/**
+ * An endpoint nobody is signed in to (a person opening an invitation link). It gets NO caller: whatever school it acts
+ * in has to come from the link itself, so there is no `auth` here to take it from by mistake.
+ */
+export type PublicHandler = (deps: Deps, req: AdminRequest) => Promise<AdminResponse>;
+
+/**
+ * Builds the role gate for one slice of the route table. The coarse gate runs FIRST, before the body is even read, so a
+ * caller who may never use an endpoint learns nothing from validation or "not found" answers. Services then authorise
+ * again for the specific resource.
+ */
+export function guardedBy(routes: readonly RouteSpec[]): (key: string, fn: AdminHandler) => AdminHandler {
+  const policy = new Map(routes.map((r) => [routeKey(r), r.access]));
+  return (key, fn) =>
+    // async: a refusal is always a rejected promise, never a synchronous throw, whoever calls the handler
+    async (deps, auth, req) => {
+      const access = policy.get(key);
+      if (!access || typeof access === "string") throw new Error(`No action policy for ${key}`);
+      if (!roleMayAttempt(auth.principal, access.action)) throw new HttpError(403, "forbidden", "You do not have permission to do that.");
+      return fn(deps, auth, req);
+    };
+}
 
 type Schema<T> = z.ZodType<T, z.ZodTypeDef, unknown>;
 

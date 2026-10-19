@@ -1,4 +1,4 @@
-import type { AdminStore } from "@schoolpulse/db";
+import type { AuditEntry } from "@schoolpulse/db";
 import { classifyDbError } from "@schoolpulse/db";
 import { authorize, todayInTimezone, type Action, type Problem } from "@schoolpulse/domain";
 import type { Deps } from "../deps.ts";
@@ -24,6 +24,8 @@ const CONFLICTS = new Set([
   "already_in_class", "class_archived", "student_not_enrolled", "move_before_current_start", "change_before_current_start",
   "overlaps_enrolment", "no_change", "class_has_students", "class_year_locked", "year_excludes_history", "class_year_ended",
   "not_latest_placement", "placement_has_attendance",
+  // P1 staff onboarding: the person's current state, not the shape of the request, is what stands in the way.
+  "already_a_member", "member_deactivated", "head_not_managed", "already_inactive", "already_active", "shared_account",
 ]);
 
 export function httpFromProblem(p: Problem): HttpError {
@@ -64,7 +66,7 @@ export async function withConstraints<T>(rules: Readonly<Record<string, Constrai
 
 // ---- audit ----
 
-export function audit(tx: AdminStore, auth: AuthContext, action: string, entityType: string, entityId: string | null, details: unknown = {}): Promise<void> {
+export function audit(tx: { appendAudit(e: AuditEntry): Promise<void> }, auth: AuthContext, action: string, entityType: string, entityId: string | null, details: unknown = {}): Promise<void> {
   return tx.appendAudit({
     schoolId: auth.ctx.school.id, actorUserId: auth.ctx.user.id, action, entityType, entityId, opId: null, details,
   });

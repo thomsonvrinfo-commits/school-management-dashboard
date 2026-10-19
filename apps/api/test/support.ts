@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createTestDatabase, type TestDatabase } from "@schoolpulse/db/testing";
-import { DEV_ACCOUNTS, DEV_IDS, createAdminDb, seedDev } from "@schoolpulse/db";
+import { DEV_ACCOUNTS, DEV_IDS, createAdminDb, createStaffDb, seedDev } from "@schoolpulse/db";
 import type { AttendanceRecordOp, OpResult, TokenResponse } from "@schoolpulse/contracts";
 import type { Deps } from "../src/deps.ts";
 import { hashPassword } from "../src/auth/password.ts";
@@ -57,6 +57,7 @@ export async function makeFixture(): Promise<Fixture> {
   const deps: Deps = {
     db: t.db,
     admin: createAdminDb(t.runner),
+    staff: createStaffDb(t.runner),
     now: () => clock.now,
     newId: () => crypto.randomUUID(),
     authSecret: SECRET,

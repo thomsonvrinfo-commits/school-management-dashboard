@@ -7,32 +7,16 @@ import {
   createTermRequest, placeStudentRequest, rosterQuery, studentListQuery, updateAcademicYearRequest, updateClassRequest, updateSchoolRequest,
   updateStudentRequest, updateTermRequest, uuid,
 } from "@schoolpulse/contracts";
-import { roleMayAttempt } from "@schoolpulse/domain";
-import { HttpError } from "../errors.ts";
 import { SCHOOL_ADMIN_ROUTES, routeKey } from "../routes.ts";
 import type { AdminHandler } from "./http.ts";
-import { idParam, readBody, readQuery } from "./http.ts";
+import { guardedBy, idParam, readBody, readQuery } from "./http.ts";
 import { assignTeacher, classRoster, createClass, getClass, listClasses, listTeachers, myClasses, removeTeacher, updateClass } from "./classes.ts";
 import {
   createAcademicYear, createTerm, deleteAcademicYear, deleteTerm, getSchoolProfile, listAcademicYears, updateAcademicYear, updateSchoolProfile, updateTerm,
 } from "./school.ts";
 import { changeStudentStatus, getStudent, listStudents, placeStudent, registerStudent, removePlacement, updateStudent } from "./students.ts";
 
-const POLICY = new Map(SCHOOL_ADMIN_ROUTES.map((r) => [routeKey(r), r.access]));
-
-/**
- * The coarse role gate runs FIRST, before the body is even read, so a caller who may never use an endpoint learns
- * nothing from validation or "not found" answers. Services then authorise again for the specific resource.
- */
-function guarded(key: string, fn: AdminHandler): AdminHandler {
-  // async: a refusal is always a rejected promise, never a synchronous throw, whoever calls the handler
-  return async (deps, auth, req) => {
-    const access = POLICY.get(key);
-    if (!access || typeof access === "string") throw new Error(`No action policy for ${key}`);
-    if (!roleMayAttempt(auth.principal, access.action)) throw new HttpError(403, "forbidden", "You do not have permission to do that.");
-    return fn(deps, auth, req);
-  };
-}
+const guarded = guardedBy(SCHOOL_ADMIN_ROUTES);
 
 const id = (req: Parameters<AdminHandler>[2]) => idParam(req, "id", uuid);
 

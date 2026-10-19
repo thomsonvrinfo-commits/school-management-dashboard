@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { createAdminDb, createDb } from "@schoolpulse/db";
+import { createAdminDb, createDb, createStaffDb } from "@schoolpulse/db";
 import { postgresJsRunner } from "@schoolpulse/db/postgres-js";
 import { createApp, type DepsFactory } from "./app.ts";
 
@@ -11,6 +11,7 @@ const makeDeps: DepsFactory = (env) => {
     deps: {
       db: createDb(runner),
       admin: createAdminDb(runner),
+      staff: createStaffDb(runner),
       now: () => new Date(),
       newId: () => crypto.randomUUID(),
       authSecret: env.AUTH_SECRET,

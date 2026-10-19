@@ -106,3 +106,14 @@ test("every Slice 1 action keeps exactly the answer it had before Slice 2", () =
   assert.equal(at(head, "attendance:summary"), true);
   assert.equal(at(teacher, "attendance:summary"), false);
 });
+
+// ---------- P1: staff accounts ----------
+
+test("only the head may read or manage staff accounts", () => {
+  for (const action of ["staff:read", "staff:manage"] as const) {
+    assert.equal(authorize(head, action, { schoolId: S1 }).allowed, true, `head ${action}`);
+    assert.deepEqual(authorize(teacher, action, { schoolId: S1 }), { allowed: false, reason: "role_not_permitted" }, `teacher ${action}`);
+    assert.equal(roleMayAttempt(teacher, action), false);
+    assert.equal(roleMayAttempt(head, action), true);
+  }
+});

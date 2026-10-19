@@ -6,3 +6,5 @@ export * from "./seed.ts";
 export * from "./admin-store.ts";
 export * from "./postgres-admin-store.ts";
 export * from "./db-errors.ts";
+export * from "./staff-store.ts";
+export * from "./postgres-staff-store.ts";

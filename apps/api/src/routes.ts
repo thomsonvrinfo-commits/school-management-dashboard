@@ -61,6 +61,25 @@ export const SCHOOL_ADMIN_ROUTES: readonly RouteSpec[] = [
   { method: "GET", path: "/v1/me/classes", access: { action: "teaching:own-classes" } },
 ];
 
-export const ROUTES: readonly RouteSpec[] = [...SLICE_1, ...SCHOOL_ADMIN_ROUTES];
+/**
+ * P1: staff onboarding. The head lists staff, invites teachers and switches access on and off; a teacher's password is
+ * reset by a link the head hands over. `:membershipId` and `:id` are resolved INSIDE the signed-in head's school.
+ * The three public routes are the only ones a person without an account can reach; the school they act in comes from
+ * the link they hold (an unguessable, single-use, expiring token), never from the request.
+ */
+export const STAFF_ROUTES: readonly RouteSpec[] = [
+  { method: "GET", path: "/v1/staff", access: { action: "staff:read" } },
+  { method: "POST", path: "/v1/staff/invitations", access: { action: "staff:manage" } },
+  { method: "DELETE", path: "/v1/staff/invitations/:id", access: { action: "staff:manage" } },
+  { method: "POST", path: "/v1/staff/:membershipId/deactivate", access: { action: "staff:manage" } },
+  { method: "POST", path: "/v1/staff/:membershipId/reactivate", access: { action: "staff:manage" } },
+  { method: "POST", path: "/v1/staff/:membershipId/reset-link", access: { action: "staff:manage" } },
+
+  { method: "POST", path: "/v1/invitations/preview", access: "public" },
+  { method: "POST", path: "/v1/invitations/accept", access: "public" },
+  { method: "POST", path: "/v1/password-reset/complete", access: "public" },
+];
+
+export const ROUTES: readonly RouteSpec[] = [...SLICE_1, ...SCHOOL_ADMIN_ROUTES, ...STAFF_ROUTES];
 
 export const routeKey = (r: { method: string; path: string }) => `${r.method} ${r.path}`;

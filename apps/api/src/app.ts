@@ -15,7 +15,8 @@ import { authenticate, login, logout, meOf, refresh, type AuthContext } from "./
 import { bootstrap, push } from "./services/sync.ts";
 import { attendanceSummary } from "./services/admin.ts";
 import { SCHOOL_ADMIN_HANDLERS } from "./school-admin/handlers.ts";
-import type { AdminHandler } from "./school-admin/http.ts";
+import type { AdminHandler, PublicHandler } from "./school-admin/http.ts";
+import { PUBLIC_STAFF_HANDLERS, STAFF_HANDLERS } from "./staff/handlers.ts";
 
 export interface Env {
   HYPERDRIVE: { connectionString: string };
@@ -61,8 +62,16 @@ const adapt = (h: AdminHandler): Handler => async (c) => {
   return res.body === undefined ? c.body(null, res.status as 204) : c.json(res.body, res.status as 200 | 201);
 };
 
+/** The same, for endpoints with no signed-in caller (invitation and reset links). They are handed no `auth` at all. */
+const adaptPublic = (h: PublicHandler): Handler => async (c) => {
+  const res = await h(c.get("deps"), { params: c.req.param(), query: c.req.query(), json: () => c.req.json() });
+  return res.body === undefined ? c.body(null, res.status as 204) : c.json(res.body, res.status as 200 | 201);
+};
+
 const handlers: Record<string, Handler> = {
   ...Object.fromEntries(Object.entries(SCHOOL_ADMIN_HANDLERS).map(([key, h]) => [key, adapt(h)])),
+  ...Object.fromEntries(Object.entries(STAFF_HANDLERS).map(([key, h]) => [key, adapt(h)])),
+  ...Object.fromEntries(Object.entries(PUBLIC_STAFF_HANDLERS).map(([key, h]) => [key, adaptPublic(h)])),
   "POST /v1/auth/login": async (c) => c.json(await login(c.get("deps"), await readBody(c, loginRequest))),
   "POST /v1/auth/refresh": async (c) => c.json(await refresh(c.get("deps"), await readBody(c, refreshRequest))),
   "POST /v1/auth/logout": async (c) => {
