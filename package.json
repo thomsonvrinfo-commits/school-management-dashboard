@@ -12,6 +12,7 @@
     "db:up": "docker compose up -d db",
     "db:migrate": "node --no-warnings packages/db/scripts/migrate.ts",
     "db:seed:dev": "node --no-warnings apps/api/scripts/seed-dev.ts",
+    "operator": "node --no-warnings apps/api/scripts/operator.ts",
     "dev:api": "npm run dev -w @schoolpulse/api",
     "dev:web": "npm run dev -w @schoolpulse/web",
     "build:web": "npm run build -w @schoolpulse/web"

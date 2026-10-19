@@ -6,7 +6,8 @@
 import type { AcceptInvitationRequest, CompletePasswordResetRequest, InvitationPreview, PreviewInvitationRequest, TokenResponse } from "@schoolpulse/contracts";
 import type { StaffStore, StaffTokenRow } from "@schoolpulse/db";
 import {
-  normaliseStaffName, tokenProblem, tokenState, validateInvitation, validatePassword, validateResetTarget, validateStaffName, type Problem,
+  normaliseStaffName, tokenProblem, tokenState, validateInvitation, validateOperatorResetTarget, validatePassword, validateResetTarget, validateStaffName,
+  type Problem,
 } from "@schoolpulse/domain";
 import type { Deps } from "../deps.ts";
 import { HttpError } from "../errors.ts";
@@ -124,7 +125,8 @@ export async function completePasswordReset(deps: Deps, req: CompletePasswordRes
     const member = await tx.findStaffByEmail(row.schoolId, user.email);
     const locked = member ? await tx.lockStaffMember(row.schoolId, member.membershipId) : null;
     if (!locked) throw unknownLink();
-    ensure(validateResetTarget(locked, await tx.membershipCountForUser(user.id)));
+    // A link a head made is held to the head's rules; one the operator made (no head behind it) only needs the access to be on.
+    ensure(row.createdBy === null ? validateOperatorResetTarget(locked) : validateResetTarget(locked, await tx.membershipCountForUser(user.id)));
     await claimOrExplain(tx, deps, row);
     await tx.setUserPassword(user.id, passwordHash);
     const sessionsEnded = await tx.revokeAllSessionsOfUser(user.id);

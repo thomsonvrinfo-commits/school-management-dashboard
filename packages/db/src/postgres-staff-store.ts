@@ -10,7 +10,7 @@ const TS = (col: string) => `to_char(${col} at time zone 'UTC', 'YYYY-MM-DD"T"HH
 const MEMBER_SELECT = `m.id as "membershipId", u.id as "userId", u.name, u.email, m.role, m.active, ${TS("m.created_at")} as "joinedAt"`;
 
 const TOKEN_SELECT = `t.id, t.school_id as "schoolId", s.name as "schoolName", t.purpose, t.email, t.name, t.role, t.user_id as "userId",
-       ${TS("t.expires_at")} as "expiresAt", ${TS("t.used_at")} as "usedAt", ${TS("t.revoked_at")} as "revokedAt", ${TS("t.created_at")} as "createdAt"`;
+       ${TS("t.expires_at")} as "expiresAt", ${TS("t.used_at")} as "usedAt", ${TS("t.revoked_at")} as "revokedAt", ${TS("t.created_at")} as "createdAt", t.created_by as "createdBy"`;
 
 export class PostgresStaffStore implements StaffStore {
   private readonly db: SqlClient;

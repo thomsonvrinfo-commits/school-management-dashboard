@@ -144,3 +144,11 @@ export function validateResetTarget(target: StaffTarget, schoolCount: number): P
   }
   return null;
 }
+
+/**
+ * A reset link made by the platform operator (the only way a head's password is replaced) needs only that the person's
+ * access is still on: the operator is trusted with shared accounts, the head of a school is not.
+ */
+export function validateOperatorResetTarget(target: { active: boolean }): Problem | null {
+  return target.active ? null : problem("member_deactivated", "This person's access is switched off.");
+}

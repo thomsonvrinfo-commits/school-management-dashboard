@@ -21,6 +21,8 @@ export interface StaffTokenRow {
   id: string; schoolId: string; schoolName: string; purpose: TokenPurpose;
   email: string; name: string | null; role: Role | null; userId: string | null;
   expiresAt: string; usedAt: string | null; revokedAt: string | null; createdAt: string;
+  /** The head who issued it, or null when the platform operator did (from the command line). */
+  createdBy: string | null;
 }
 
 export interface NewStaffToken {
