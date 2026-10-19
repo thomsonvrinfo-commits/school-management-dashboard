@@ -107,7 +107,9 @@ export async function acceptInvitation(deps: Deps, req: AcceptInvitationRequest)
 /**
  * Finishing a reset: chooses the new password, ends every session the account has, and uses up the link. The rules that
  * allowed the link to be made are checked AGAIN here (the person may have been switched off, or joined another school,
- * since), and under a lock on the membership so a simultaneous "switch off" cannot slip past.
+ * since). The membership is locked while that happens as belt and braces; what actually stops a reset from slipping past
+ * a simultaneous "switch off" is that switching off withdraws the person's waiting links in its own transaction, so the
+ * claim below fails.
  */
 export async function completePasswordReset(deps: Deps, req: CompletePasswordResetRequest): Promise<void> {
   const row = await findLink(deps, req.token, "reset");

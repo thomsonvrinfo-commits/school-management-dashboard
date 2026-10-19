@@ -319,6 +319,22 @@ test("switching access off signs the person out everywhere and stops them signin
   expectError(await call(f, f.head, "POST /v1/staff/:membershipId/reactivate", { params: { membershipId: p.membershipId } }), 409, "already_active");
 });
 
+test("two simultaneous requests to switch the same person off or on: one succeeds, the other is told, and the trail has one entry", { skip }, async () => {
+  const p = await onboard("Contended Person");
+  const off = () => call(f, f.head, "POST /v1/staff/:membershipId/deactivate", { params: { membershipId: p.membershipId } });
+  const on = () => call(f, f.head, "POST /v1/staff/:membershipId/reactivate", { params: { membershipId: p.membershipId } });
+  const trail = async (action: string) => (await q(`select 1 from audit_log where action = $1 and entity_id = $2`, [action, p.membershipId])).length;
+
+  const offs = await Promise.all([off(), off(), off()]);
+  assert.deepEqual(offs.map((r) => r.status).sort(), [200, 409, 409], JSON.stringify(offs.map((r) => r.body)));
+  for (const r of offs.filter((x) => x.status === 409)) expectError(r, 409, "already_inactive");
+  assert.equal(await trail("staff.deactivated"), 1);
+
+  const ons = await Promise.all([on(), on(), on()]);
+  assert.deepEqual(ons.map((r) => r.status).sort(), [200, 409, 409], JSON.stringify(ons.map((r) => r.body)));
+  assert.equal(await trail("staff.reactivated"), 1);
+});
+
 test("switching one person off leaves everyone else signed in", { skip }, async () => {
   const a = await onboard("Person A");
   const b = await onboard("Person B");
