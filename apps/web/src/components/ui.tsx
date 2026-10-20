@@ -3,7 +3,7 @@
  * 48px touch targets) and carry the accessibility wiring once: every control has a visible label, errors and hints
  * are tied to their control with aria-describedby, and nothing relies on colour alone.
  */
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 
 const CONTROL = "mt-1 min-h-12 w-full rounded-xl border bg-white/5 px-3 text-base placeholder:text-dim/60 disabled:opacity-60";
@@ -109,7 +109,7 @@ function Shell({ id, label, error, hint, required, children }: FieldShell & { id
 const describedBy = (id: string, error?: string, hint?: string) => [hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
 
 export function TextField(props: FieldShell & {
-  value: string; onChange: (v: string) => void; type?: "text" | "email" | "tel" | "date"; maxLength?: number; autoComplete?: string;
+  value: string; onChange: (v: string) => void; type?: "text" | "email" | "tel" | "date" | "password"; maxLength?: number; autoComplete?: string;
   inputMode?: "text" | "email" | "tel" | "search"; list?: string; disabled?: boolean; placeholder?: string;
 }) {
   const id = useId();
@@ -123,6 +123,30 @@ export function TextField(props: FieldShell & {
         className={`${CONTROL} ${border(Boolean(props.error))}`}
       />
     </Shell>
+  );
+}
+
+/**
+ * A password box with a "Show password" switch. On a phone a long phrase typed blind is the commonest reason for a
+ * mistake, so it can be shown while typing. Never remembered by the browser's form autofill as a *new* password
+ * unless `autoComplete` says so: pass "new-password" for a password being chosen, "current-password" for one being proved.
+ */
+export function PasswordField(props: FieldShell & { value: string; onChange: (v: string) => void; autoComplete: "new-password" | "current-password"; maxLength?: number }) {
+  const [shown, setShown] = useState(false);
+  const id = useId();
+  const { value, onChange, autoComplete, maxLength, ...shell } = props;
+  return (
+    <div className="space-y-1">
+      <Shell id={id} {...shell}>
+        <input
+          id={id} type={shown ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} autoComplete={autoComplete} maxLength={maxLength ?? 200}
+          autoCapitalize="none" autoCorrect="off" spellCheck={false}
+          aria-invalid={props.error ? true : undefined} aria-describedby={describedBy(id, props.error, props.hint)}
+          className={`${CONTROL} ${border(Boolean(props.error))}`}
+        />
+      </Shell>
+      <CheckField label="Show password" checked={shown} onChange={setShown} />
+    </div>
   );
 }
 

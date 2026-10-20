@@ -1,4 +1,4 @@
-import type { MeResponse } from "@schoolpulse/contracts";
+import type { MeResponse, TokenResponse } from "@schoolpulse/contracts";
 import { ApiFailure, NetworkFailure, api, clearAccessToken, sessionExpired, setAccessToken } from "./api.ts";
 import { db, wipeLocalData } from "./db.ts";
 import { clearStoredSession, getDeviceId, getStoredSession, saveStoredSession } from "./session.ts";
@@ -31,8 +31,16 @@ export async function restoreSession(): Promise<void> {
 }
 
 export async function signIn(input: { email: string; password: string }): Promise<void> {
-  const tokens = await api.login({ ...input, deviceId: await getDeviceId() });
+  await adoptSession(await api.login({ ...input, deviceId: await getDeviceId() }));
+}
 
+/** Accepting an invitation signs the person in exactly as a password sign-in does. */
+export async function acceptInvitation(input: { token: string; password: string; name?: string }): Promise<void> {
+  await adoptSession(await api.acceptInvitation({ ...input, deviceId: await getDeviceId() }));
+}
+
+/** Makes the tokens the server just issued this phone's sign-in. */
+async function adoptSession(tokens: TokenResponse): Promise<void> {
   // If a different person signs in on this phone, their predecessor's data must not stay behind.
   const previous = await getStoredSession();
   if (previous && previous.me.user.id !== tokens.me.user.id) {

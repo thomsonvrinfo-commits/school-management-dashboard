@@ -157,7 +157,7 @@ test("a link that does not exist, is malformed, or is for the other purpose all 
   expectError(await preview("A".repeat(43)), 404, "link_not_found");
   expectError(await preview("short"), 400, "invalid_request");
   expectError(await preview("not a token!!!not a token!!!"), 400, "invalid_request");
-  const resetLink = await issueReset(f.chipo.auth.ctx.membershipId ?? DEV_IDS.teacherMembership);
+  const resetLink = await issueReset(DEV_IDS.teacherMembership);
   expectError(await preview(resetLink.token), 404, "link_not_found");
   expectError(await accept(resetLink.token), 404, "link_not_found");
   const inv = await invite(freshEmail());

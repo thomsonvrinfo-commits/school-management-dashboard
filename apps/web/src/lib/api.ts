@@ -5,7 +5,8 @@
  *  - ApiFailure: the server answered and said no. The reason is in `code`.
  */
 import type {
-  AttendanceSummaryResponse, BootstrapResponse, LoginRequest, PushRequest, PushResponse, TokenResponse,
+  AcceptInvitationRequest, AttendanceSummaryResponse, BootstrapResponse, CompletePasswordResetRequest, InvitationPreview, LoginRequest, PushRequest,
+  PushResponse, TokenResponse,
 } from "@schoolpulse/contracts";
 import { getDeviceId, getStoredSession, saveStoredSession } from "./session.ts";
 import { createStore } from "./store.ts";
@@ -122,6 +123,16 @@ export async function authed<T>(method: string, path: string, body?: unknown): P
 export const api = {
   async login(req: LoginRequest): Promise<TokenResponse> {
     return readOrThrow<TokenResponse>(await send("POST", "/v1/auth/login", req));
+  },
+  // Invitation and reset links: used by someone who is not signed in, so no token is sent.
+  async previewInvitation(token: string): Promise<InvitationPreview> {
+    return readOrThrow<InvitationPreview>(await send("POST", "/v1/invitations/preview", { token }));
+  },
+  async acceptInvitation(req: AcceptInvitationRequest): Promise<TokenResponse> {
+    return readOrThrow<TokenResponse>(await send("POST", "/v1/invitations/accept", req));
+  },
+  async completePasswordReset(req: CompletePasswordResetRequest): Promise<void> {
+    await readOrThrow<void>(await send("POST", "/v1/password-reset/complete", req));
   },
   async logout(refreshToken: string): Promise<void> {
     await readOrThrow<void>(await send("POST", "/v1/auth/logout", { refreshToken }));

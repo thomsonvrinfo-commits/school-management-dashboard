@@ -5,7 +5,8 @@
  */
 import type {
   AcademicYearDto, ChangeStudentStatusRequest, ClassDetail, ClassListQuery, ClassPage, CreateAcademicYearRequest, CreateClassRequest,
-  CreateStudentRequest, CreateTermRequest, MyClassesResponse, PlaceStudentRequest, RosterResponse, SchoolProfile, StudentDetail, StudentListQuery,
+  CreateStudentRequest, CreateTermRequest, InviteStaffRequest, InviteStaffResponse, MyClassesResponse, PlaceStudentRequest, ResetLinkResponse,
+  RosterResponse, SchoolProfile, StaffListResponse, StaffMember, StudentDetail, StudentListQuery,
   StudentPage, TeacherListItem, TermDto, UpdateAcademicYearRequest, UpdateClassRequest, UpdateSchoolRequest, UpdateStudentRequest,
   UpdateTermRequest,
 } from "@schoolpulse/contracts";
@@ -43,4 +44,12 @@ export const adminApi = {
   assignTeacher: (classId: string, userId: string) => authed<ClassDetail>("POST", `/v1/classes/${classId}/teachers`, { userId }),
   removeTeacher: (classId: string, userId: string) => authed<ClassDetail>("DELETE", `/v1/classes/${classId}/teachers/${userId}`),
   myClasses: () => authed<MyClassesResponse>("GET", "/v1/me/classes"),
+
+  // staff onboarding (P1)
+  staff: () => authed<StaffListResponse>("GET", "/v1/staff"),
+  inviteStaff: (body: InviteStaffRequest) => authed<InviteStaffResponse>("POST", "/v1/staff/invitations", body),
+  revokeInvitation: (id: string) => authed<void>("DELETE", `/v1/staff/invitations/${id}`),
+  deactivateStaff: (membershipId: string) => authed<StaffMember>("POST", `/v1/staff/${membershipId}/deactivate`),
+  reactivateStaff: (membershipId: string) => authed<StaffMember>("POST", `/v1/staff/${membershipId}/reactivate`),
+  staffResetLink: (membershipId: string) => authed<ResetLinkResponse>("POST", `/v1/staff/${membershipId}/reset-link`),
 };

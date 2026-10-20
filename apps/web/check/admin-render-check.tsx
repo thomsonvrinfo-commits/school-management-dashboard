@@ -29,6 +29,7 @@ const forms = await import("../src/components/admin-forms.tsx");
 const views = await import("../src/components/admin-views.tsx");
 const ui = await import("../src/components/ui.tsx");
 const f = await import("../src/lib/admin-forms.ts");
+const { assertAccessible, text } = await import("./a11y.ts");
 
 let passed = 0;
 const check = (name: string, fn: () => void) => {
@@ -36,29 +37,8 @@ const check = (name: string, fn: () => void) => {
   passed += 1;
   console.log(`ok - ${name}`);
 };
-const text = (html: string) =>
-  html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/\s+/g, " ").replace(/\s([:,.;])/g, "$1").trim();
 const noop = () => {};
 const UUID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-
-/** Every input and select has a label that points at it; every button has a name a screen reader can speak. */
-function assertAccessible(html: string, where: string) {
-  const controls = [...html.matchAll(/<(input|select)\b[^>]*>/g)].map((m) => m[0]);
-  for (const c of controls) {
-    const id = /\bid="([^"]+)"/.exec(c)?.[1];
-    assert.ok(id, `${where}: control without an id: ${c}`);
-    assert.ok(new RegExp(`<label[^>]*for="${id}"`).test(html), `${where}: no <label for="${id}"> for ${c}`);
-  }
-  for (const m of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)) {
-    const named = /aria-label="[^"]+"/.test(m[1] ?? "") || text(m[2] ?? "").length > 0;
-    assert.ok(named, `${where}: a button has no name: ${m[0]}`);
-  }
-  const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]);
-  assert.equal(new Set(ids).size, ids.length, `${where}: duplicate ids ${ids.join(",")}`);
-  for (const m of html.matchAll(/aria-describedby="([^"]+)"/g)) {
-    for (const ref of (m[1] ?? "").split(" ")) assert.ok(ids.includes(ref), `${where}: aria-describedby points at missing id ${ref}`);
-  }
-}
 
 const classes = [
   { id: UUID(1), name: "Grade 4A", academicYear: { name: "2026" } },
