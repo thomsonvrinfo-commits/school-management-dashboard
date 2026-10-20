@@ -163,6 +163,29 @@ export interface AdminStore {
 
   // ---- audit (same transaction as the change it describes) ----
   appendAudit(e: AuditEntry): Promise<void>;
+  /**
+   * The school's audit entries, newest first: at most `limit` rows, all strictly older (by id) than `filter.before`
+   * when given. `details` is returned as stored; the API decides what of it may be shown.
+   */
+  listAudit(schoolId: string, filter: AuditFilter, limit: number): Promise<AuditRow[]>;
+}
+
+export interface AuditFilter {
+  /** Only actions whose first part (before the dot) is one of these: ["student"], ["school", "academic_year", "term"]... */
+  actionPrefixes?: readonly string[];
+  actorUserId?: string;
+  /** Inclusive school days, `YYYY-MM-DD`, read in `timeZone`. */
+  fromDate?: string;
+  toDate?: string;
+  timeZone: string;
+  /** An audit entry id (digits): only older entries are returned. */
+  before?: string;
+}
+
+export interface AuditRow {
+  /** bigint, as digits: JavaScript numbers cannot hold all of it. */
+  id: string; at: string; actorId: string; actorName: string;
+  action: string; entityType: string; entityId: string | null; details: unknown;
 }
 
 /** Runs `fn` in one database transaction with an AdminStore bound to it. */

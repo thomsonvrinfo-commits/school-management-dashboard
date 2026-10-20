@@ -17,6 +17,7 @@ import { attendanceSummary } from "./services/admin.ts";
 import { SCHOOL_ADMIN_HANDLERS } from "./school-admin/handlers.ts";
 import type { AdminHandler, PublicHandler } from "./school-admin/http.ts";
 import { PUBLIC_STAFF_HANDLERS, STAFF_HANDLERS } from "./staff/handlers.ts";
+import { AUDIT_HANDLERS } from "./audit/handlers.ts";
 
 export interface Env {
   HYPERDRIVE: { connectionString: string };
@@ -71,6 +72,7 @@ const adaptPublic = (h: PublicHandler): Handler => async (c) => {
 const handlers: Record<string, Handler> = {
   ...Object.fromEntries(Object.entries(SCHOOL_ADMIN_HANDLERS).map(([key, h]) => [key, adapt(h)])),
   ...Object.fromEntries(Object.entries(STAFF_HANDLERS).map(([key, h]) => [key, adapt(h)])),
+  ...Object.fromEntries(Object.entries(AUDIT_HANDLERS).map(([key, h]) => [key, adapt(h)])),
   ...Object.fromEntries(Object.entries(PUBLIC_STAFF_HANDLERS).map(([key, h]) => [key, adaptPublic(h)])),
   "POST /v1/auth/login": async (c) => c.json(await login(c.get("deps"), await readBody(c, loginRequest))),
   "POST /v1/auth/refresh": async (c) => c.json(await refresh(c.get("deps"), await readBody(c, refreshRequest))),

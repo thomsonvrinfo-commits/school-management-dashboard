@@ -80,6 +80,14 @@ export const STAFF_ROUTES: readonly RouteSpec[] = [
   { method: "POST", path: "/v1/password-reset/complete", access: "public" },
 ];
 
-export const ROUTES: readonly RouteSpec[] = [...SLICE_1, ...SCHOOL_ADMIN_ROUTES, ...STAFF_ROUTES];
+/**
+ * P1: the head's activity screen. Read-only, newest first, paged with a cursor. The school is the caller's own; a filter
+ * can narrow what is shown but there is no way to name another school.
+ */
+export const AUDIT_ROUTES: readonly RouteSpec[] = [
+  { method: "GET", path: "/v1/audit", access: { action: "audit:read" } },
+];
+
+export const ROUTES: readonly RouteSpec[] = [...SLICE_1, ...SCHOOL_ADMIN_ROUTES, ...STAFF_ROUTES, ...AUDIT_ROUTES];
 
 export const routeKey = (r: { method: string; path: string }) => `${r.method} ${r.path}`;

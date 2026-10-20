@@ -26,6 +26,8 @@ export const ACTIONS = [
   // P1: staff accounts
   "staff:read",
   "staff:manage",
+  // P1: who did what
+  "audit:read",
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -93,6 +95,10 @@ export function authorize(principal: Principal, action: string, resource: Resour
     // ---- staff accounts: the head invites and manages teachers; nobody else sees the staff list ----
     case "staff:read":
     case "staff:manage":
+      return principal.role === "head" ? allow : deny("role_not_permitted");
+
+    // ---- the activity log: who changed what, for the head only ----
+    case "audit:read":
       return principal.role === "head" ? allow : deny("role_not_permitted");
 
     default:

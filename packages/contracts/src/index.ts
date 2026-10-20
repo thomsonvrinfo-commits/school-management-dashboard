@@ -170,3 +170,6 @@ export * from "./admin.ts";
 
 // ---------- P1: staff onboarding ----------
 export * from "./staff.ts";
+
+// ---------- P1: activity screen ----------
+export * from "./audit.ts";

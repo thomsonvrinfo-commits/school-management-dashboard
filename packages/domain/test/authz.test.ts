@@ -109,11 +109,15 @@ test("every Slice 1 action keeps exactly the answer it had before Slice 2", () =
 
 // ---------- P1: staff accounts ----------
 
-test("only the head may read or manage staff accounts", () => {
-  for (const action of ["staff:read", "staff:manage"] as const) {
+test("only the head may read or manage staff accounts, or read the activity log", () => {
+  for (const action of ["staff:read", "staff:manage", "audit:read"] as const) {
     assert.equal(authorize(head, action, { schoolId: S1 }).allowed, true, `head ${action}`);
     assert.deepEqual(authorize(teacher, action, { schoolId: S1 }), { allowed: false, reason: "role_not_permitted" }, `teacher ${action}`);
     assert.equal(roleMayAttempt(teacher, action), false);
     assert.equal(roleMayAttempt(head, action), true);
   }
+});
+
+test("the activity log is closed to another school's head too", () => {
+  assert.deepEqual(authorize(head, "audit:read", { schoolId: "00000000-0000-4000-8000-000000000002" }), { allowed: false, reason: "wrong_school" });
 });

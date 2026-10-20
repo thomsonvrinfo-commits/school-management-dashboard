@@ -6,3 +6,4 @@ export * from "./academic.ts";
 export * from "./students.ts";
 export * from "./classes.ts";
 export * from "./staff.ts";
+export * from "./audit-view.ts";

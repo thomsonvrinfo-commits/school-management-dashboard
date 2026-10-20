@@ -2,10 +2,20 @@ import type { SqlClient, SqlParam, SqlRunner } from "./sql.ts";
 import { PostgresStore } from "./postgres-store.ts";
 import type { AuditEntry } from "./store.ts";
 import type {
-  AcademicYearPatch, AcademicYearRow, AdminClassRow, AdminDb, AdminStore, AdminStudentRow, ClassFilter, ClassPatch, ClassTeacherRow,
+  AcademicYearPatch, AcademicYearRow, AdminClassRow, AdminDb, AdminStore, AdminStudentRow, AuditFilter, AuditRow, ClassFilter, ClassPatch, ClassTeacherRow,
   EnrolmentRow, MyClassRow, NewAcademicYear, NewClass, NewEnrolment, NewStudent, NewTerm, Page, SchoolPatch, SchoolRow,
   StudentAttendanceSummary, StudentFilter, StudentListRow, StudentPatch, TeacherRow, TermPatch, TermRow,
 } from "./admin-store.ts";
+
+/** audit_log.details, read as text. A row that somehow is not JSON shows as no details rather than failing the page. */
+function parseDetails(text: string | null): unknown {
+  if (text === null) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
 
 /** Dates always come back as `YYYY-MM-DD` text, whatever the driver does with native date types. */
 const D = (col: string) => `to_char(${col}, 'YYYY-MM-DD')`;
@@ -516,6 +526,35 @@ export class PostgresAdminStore implements AdminStore {
   }
 
   // ---------- audit ----------
+
+  async listAudit(schoolId: string, f: AuditFilter, limit: number): Promise<AuditRow[]> {
+    const params: SqlParam[] = [schoolId];
+    const where: string[] = ["a.school_id = $1"];
+    if (f.actionPrefixes && f.actionPrefixes.length > 0) {
+      const marks = f.actionPrefixes.map((p) => `$${params.push(p)}`);
+      where.push(`split_part(a.action, '.', 1) in (${marks.join(", ")})`);
+    }
+    if (f.actorUserId) where.push(`a.actor_user_id = $${params.push(f.actorUserId)}`);
+    // A school day runs from local midnight to the next local midnight, in the school's own time zone.
+    const tz = `$${params.push(f.timeZone)}`;
+    if (f.fromDate) where.push(`a.at >= ($${params.push(f.fromDate)}::date)::timestamp at time zone ${tz}`);
+    if (f.toDate) where.push(`a.at < ($${params.push(f.toDate)}::date + 1)::timestamp at time zone ${tz}`);
+    if (f.before) where.push(`a.id < $${params.push(f.before)}::bigint`);
+    const limitP = `$${params.push(limit)}`;
+    // `details` is read as text and parsed here so every driver hands back the same thing.
+    const rows = await this.db.query<{
+      id: string; at: string; actorId: string; actorName: string; action: string; entityType: string; entityId: string | null; detailsText: string | null;
+    }>(
+      `select a.id::text as id, to_char(a.at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as at, a.actor_user_id as "actorId", u.name as "actorName",
+              a.action, a.entity_type as "entityType", a.entity_id as "entityId", a.details::text as "detailsText"
+         from audit_log a join users u on u.id = a.actor_user_id
+        where ${where.join(" and ")}
+        order by a.id desc
+        limit ${limitP}`,
+      params,
+    );
+    return rows.map(({ detailsText, ...r }) => ({ ...r, details: parseDetails(detailsText) }));
+  }
 
   appendAudit(e: AuditEntry): Promise<void> {
     return this.base.appendAudit(e);
