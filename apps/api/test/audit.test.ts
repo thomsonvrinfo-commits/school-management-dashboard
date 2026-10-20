@@ -32,9 +32,14 @@ after(async () => {
   if (!skip) await f.close();
 });
 
+/** The response exactly as it would go on the wire (nothing stripped or reshaped by a parser). */
+const raw = async (query: Record<string, string> = {}, who = () => f.head) => expectOk(await call(f, who(), KEY, { query })).body as { items: Record<string, unknown>[]; nextBefore: string | null };
 const page = async (query: Record<string, string> = {}, who = () => f.head) => {
-  const res = expectOk(await call(f, who(), KEY, { query }));
-  return auditPage.parse(res.body);
+  const body = await raw(query, who);
+  // the published shape, checked strictly: a field nobody declared is a failure, not something quietly dropped
+  assert.deepEqual(Object.keys(body).sort(), ["items", "nextBefore"]);
+  for (const i of body.items) assert.deepEqual(Object.keys(i).sort(), ["actor", "at", "category", "detail", "entity", "id", "summary"]);
+  return auditPage.parse(body);
 };
 const everything = async (query: Record<string, string> = {}, who = () => f.head): Promise<AuditItem[]> => {
   const out: AuditItem[] = [];
@@ -106,7 +111,7 @@ test("the stored details are never sent: an admission number, ids and per-child 
     `insert into audit_log (school_id, actor_user_id, action, entity_type, details) values ($1, $2, 'brand.new_action', 'thing', $3::jsonb)`,
     [DEV_IDS.school, DEV_IDS.head, JSON.stringify({ secret: "do-not-show-me" })],
   );
-  const body = JSON.stringify(await page({ limit: "20" }));
+  const body = JSON.stringify(await raw({ limit: "20" }));
   for (const leaked of ["MA-SECRET-77", "Kuda", "kuda@family", "struggling", "do-not-show-me", "details"]) assert.ok(!body.includes(leaked), `leaked ${leaked}`);
   const items = (await page({ limit: "20" })).items;
   assert.deepEqual(items.slice(0, 2).map((i) => [i.summary, i.detail, i.category]), [
