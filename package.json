@@ -15,6 +15,7 @@
     "operator": "node --no-warnings apps/api/scripts/operator.ts",
     "dev:api": "npm run dev -w @schoolpulse/api",
     "dev:web": "npm run dev -w @schoolpulse/web",
-    "build:web": "npm run build -w @schoolpulse/web"
+    "build:web": "npm run build -w @schoolpulse/web",
+    "serve:web": "npm run serve -w @schoolpulse/web"
   }
 }

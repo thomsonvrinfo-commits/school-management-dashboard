@@ -18,12 +18,16 @@ import { SCHOOL_ADMIN_HANDLERS } from "./school-admin/handlers.ts";
 import type { AdminHandler, PublicHandler } from "./school-admin/http.ts";
 import { PUBLIC_STAFF_HANDLERS, STAFF_HANDLERS } from "./staff/handlers.ts";
 import { AUDIT_HANDLERS } from "./audit/handlers.ts";
+import { checkRate, type RateLimiter } from "./security/rate-limit.ts";
+import { API_SECURITY_HEADERS } from "./security/headers.ts";
 
 export interface Env {
   HYPERDRIVE: { connectionString: string };
   AUTH_SECRET: string;
   ENVIRONMENT?: string;
   ALLOWED_ORIGIN?: string;
+  /** Optional Cloudflare rate-limit binding for the endpoints that take a secret from a stranger (see security/rate-limit.ts). */
+  AUTH_RATE_LIMIT?: RateLimiter;
 }
 
 interface Vars {
@@ -102,8 +106,12 @@ export function createApp(makeDeps: DepsFactory) {
   }));
   app.use("*", async (c, next) => {
     await next();
-    c.header("X-Content-Type-Options", "nosniff");
-    c.header("Cache-Control", "no-store");
+    for (const [name, value] of Object.entries(API_SECURITY_HEADERS)) c.header(name, value);
+  });
+  // Before the body is read or a database connection is used: a refused guess costs almost nothing.
+  app.use("*", async (c, next) => {
+    await checkRate(c.env.AUTH_RATE_LIMIT, { method: c.req.method, path: c.req.path, address: c.req.header("cf-connecting-ip") }, ROUTES);
+    await next();
   });
   app.use("*", bodyLimit({
     maxSize: 512 * 1024,
@@ -137,9 +145,10 @@ export function createApp(makeDeps: DepsFactory) {
   app.notFound((c) => c.json({ error: { code: "not_found", message: "No such endpoint." } }, 404));
   app.onError((err, c) => {
     if (err instanceof HttpError) {
+      if (err.status === 429) c.header("Retry-After", "60");
       return c.json(
         { error: { code: err.code, message: err.message, ...(err.field ? { field: err.field } : {}) } },
-        err.status as 400 | 401 | 403 | 404 | 409,
+        err.status as 400 | 401 | 403 | 404 | 409 | 429,
       );
     }
     console.error("Unhandled error", err);

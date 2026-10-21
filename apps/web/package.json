@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "tsc -p tsconfig.json && vite build && node --no-warnings scripts/write-headers.ts",
+    "serve": "node --no-warnings scripts/serve-dist.ts",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p scripts/tsconfig.json"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.2.0",

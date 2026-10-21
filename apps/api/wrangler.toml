@@ -16,3 +16,17 @@ ENVIRONMENT = "development"
 ALLOWED_ORIGIN = "http://localhost:5173"
 
 # Secrets (never committed): set with `npx wrangler secret put AUTH_SECRET` (at least 32 random bytes, base64).
+
+# Rate limiting for the endpoints that take a secret from a stranger (sign-in, refresh, invitation and reset links).
+# NOT enabled yet: the API runs without it (see src/security/rate-limit.ts). To switch it on, remove the leading "# " below
+# and redeploy (needs Wrangler 4.36 or newer). One limit applies to every such endpoint; each endpoint and caller address
+# has its own counter. Counters are per Cloudflare location and approximate: this slows guessing, it does not stop it.
+# See docs/SECURITY.md for why 30 a minute.
+#
+# [[ratelimits]]
+# name = "AUTH_RATE_LIMIT"
+# namespace_id = "1001"
+#
+#   [ratelimits.simple]
+#   limit = 30
+#   period = 60
