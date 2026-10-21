@@ -7,6 +7,7 @@ import { AcceptInvitation } from "./screens/accept.tsx";
 import { ClassCreate, ClassDetailScreen, ClassList } from "./screens/admin/classes.tsx";
 import { SchoolSettings } from "./screens/admin/school.tsx";
 import { StaffScreen } from "./screens/admin/staff.tsx";
+import { ActivityScreen } from "./screens/admin/activity.tsx";
 import { StudentCreate, StudentDetailScreen, StudentList } from "./screens/admin/students.tsx";
 import { Login } from "./screens/login.tsx";
 import { NotFound } from "./screens/not-found.tsx";
@@ -38,6 +39,7 @@ export function App() {
           {/* Slice 2: school administration (head only; the API enforces the same rule) */}
           <Route path="school" element={<RequireRole role="head"><SchoolSettings /></RequireRole>} />
           <Route path="staff" element={<RequireRole role="head"><StaffScreen /></RequireRole>} />
+          <Route path="activity" element={<RequireRole role="head"><ActivityScreen /></RequireRole>} />
           <Route path="students" element={<RequireRole role="head"><StudentList /></RequireRole>} />
           <Route path="students/new" element={<RequireRole role="head"><StudentCreate /></RequireRole>} />
           <Route path="students/:id" element={<RequireRole role="head"><StudentDetailScreen /></RequireRole>} />

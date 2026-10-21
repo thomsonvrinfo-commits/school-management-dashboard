@@ -4,7 +4,7 @@
  * connection: unlike the attendance register they are not part of the offline replica.
  */
 import type {
-  AcademicYearDto, ChangeStudentStatusRequest, ClassDetail, ClassListQuery, ClassPage, CreateAcademicYearRequest, CreateClassRequest,
+  AcademicYearDto, AuditPage, AuditQuery, ChangeStudentStatusRequest, ClassDetail, ClassListQuery, ClassPage, CreateAcademicYearRequest, CreateClassRequest,
   CreateStudentRequest, CreateTermRequest, InviteStaffRequest, InviteStaffResponse, MyClassesResponse, PlaceStudentRequest, ResetLinkResponse,
   RosterResponse, SchoolProfile, StaffListResponse, StaffMember, StudentDetail, StudentListQuery,
   StudentPage, TeacherListItem, TermDto, UpdateAcademicYearRequest, UpdateClassRequest, UpdateSchoolRequest, UpdateStudentRequest,
@@ -52,4 +52,7 @@ export const adminApi = {
   deactivateStaff: (membershipId: string) => authed<StaffMember>("POST", `/v1/staff/${membershipId}/deactivate`),
   reactivateStaff: (membershipId: string) => authed<StaffMember>("POST", `/v1/staff/${membershipId}/reactivate`),
   staffResetLink: (membershipId: string) => authed<ResetLinkResponse>("POST", `/v1/staff/${membershipId}/reset-link`),
+
+  // the head's activity screen (P1)
+  activity: (query: AuditQuery = {}) => authed<AuditPage>("GET", `/v1/audit${queryString(query)}`),
 };
