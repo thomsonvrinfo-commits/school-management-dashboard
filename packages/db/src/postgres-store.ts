@@ -130,7 +130,7 @@ export class PostgresStore implements Store {
          from enrollments e join students s on s.school_id = e.school_id and s.id = e.student_id
         where e.school_id = $1 and e.class_id = any($2::uuid[]) and s.active
           and e.starts_on <= $3::date and (e.ends_on is null or e.ends_on >= $3::date)
-        order by s.last_name, s.first_name${opts.lock ? "\n          for share of e" : ""}`,
+        order by s.last_name, s.first_name, s.id${opts.lock ? "\n          for share of e" : ""}`,
       [schoolId, uuidArray(classIds), onDate],
     );
   }
@@ -141,7 +141,7 @@ export class PostgresStore implements Store {
               to_char(t.starts_at, 'HH24:MI') as "startsAt", to_char(t.ends_at, 'HH24:MI') as "endsAt"
          from timetable_slots t join classes c on c.school_id = t.school_id and c.id = t.class_id
         where t.school_id = $1 and t.teacher_user_id = $2 and t.weekday = $3 and c.status = 'active'
-        order by t.starts_at`,
+        order by t.starts_at, t.id`,
       [schoolId, userId, weekday],
     );
   }

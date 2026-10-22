@@ -77,7 +77,7 @@ test("a school set up entirely through Slice 2 can take registers: year, class, 
 
 test("the bootstrap payload keeps exactly the shape Slice 1 clients expect", { skip }, async () => {
   const raw = await bootstrap(f.deps, f.chipo.auth);
-  assert.deepEqual(Object.keys(raw).sort(), ["attendance", "classes", "school", "serverTime", "students", "todaySlots", "today"].sort());
+  assert.deepEqual(Object.keys(raw).sort(), ["attendance", "classes", "school", "serverTime", "students", "todaySlots", "today", "version"].sort());
   for (const c of raw.classes) assert.deepEqual(Object.keys(c).sort(), ["gradeLevel", "id", "name"], "no new fields leak into the replica's classes");
   for (const s of raw.students) assert.deepEqual(Object.keys(s).sort(), ["admissionNo", "classId", "firstName", "id", "lastName"], "no date of birth, gender or status on the phone");
 });

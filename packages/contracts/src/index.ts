@@ -94,6 +94,11 @@ export type PushResponse = z.infer<typeof pushResponse>;
 // ---------- sync: replica a device downloads ----------
 
 export const bootstrapResponse = z.object({
+  /**
+   * A fingerprint of everything below except `serverTime`. A phone sends it back as `since`; if nothing changed the server
+   * answers with `bootstrapUnchanged` (a few dozen bytes) instead of the whole replica. Opaque: only ever compared for equality.
+   */
+  version: z.string(),
   serverTime: z.string(),
   today: isoDate,
   school: z.object({ id: uuid, name: z.string(), timezone: z.string() }),
@@ -128,6 +133,14 @@ export const bootstrapResponse = z.object({
   ),
 });
 export type BootstrapResponse = z.infer<typeof bootstrapResponse>;
+
+/** `?since=` on the bootstrap request: the `version` of the replica this phone already holds. */
+export const bootstrapQuery = z.object({ since: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/, "Not a valid version").optional() });
+export type BootstrapQuery = z.input<typeof bootstrapQuery>;
+
+/** The answer when the phone's replica is still current: nothing to download. */
+export const bootstrapUnchanged = z.object({ unchanged: z.literal(true), version: z.string(), serverTime: z.string(), today: isoDate });
+export type BootstrapUnchanged = z.infer<typeof bootstrapUnchanged>;
 
 // ---------- admin: attendance summary ----------
 

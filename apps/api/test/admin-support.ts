@@ -4,6 +4,7 @@ import { DEV_IDS } from "@schoolpulse/db";
 import { SCHOOL_ADMIN_HANDLERS } from "../src/school-admin/handlers.ts";
 import { PUBLIC_STAFF_HANDLERS, STAFF_HANDLERS } from "../src/staff/handlers.ts";
 import { AUDIT_HANDLERS } from "../src/audit/handlers.ts";
+import { SYNC_HANDLERS } from "../src/sync/handlers.ts";
 import { HttpError } from "../src/errors.ts";
 import { EMAILS, EXTRA, PASSWORD, makeFixture, signIn, type Fixture } from "./support.ts";
 
@@ -61,7 +62,7 @@ export interface CallOptions {
  * status and body the `onError` hook would have produced.
  */
 export async function call(f: Fixture, who: Signed, key: string, opts: CallOptions = {}): Promise<Res> {
-  const handler = SCHOOL_ADMIN_HANDLERS[key] ?? STAFF_HANDLERS[key] ?? AUDIT_HANDLERS[key];
+  const handler = SCHOOL_ADMIN_HANDLERS[key] ?? STAFF_HANDLERS[key] ?? AUDIT_HANDLERS[key] ?? SYNC_HANDLERS[key];
   assert.ok(handler, `no handler for ${key}`);
   return run(() => handler(f.deps, who.auth, requestOf(opts)));
 }

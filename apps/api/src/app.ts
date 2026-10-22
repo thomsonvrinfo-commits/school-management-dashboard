@@ -12,12 +12,13 @@ import type { Deps } from "./deps.ts";
 import { HttpError } from "./errors.ts";
 import { ROUTES } from "./routes.ts";
 import { authenticate, login, logout, meOf, refresh, type AuthContext } from "./services/auth.ts";
-import { bootstrap, push } from "./services/sync.ts";
+import { push } from "./services/sync.ts";
 import { attendanceSummary } from "./services/admin.ts";
 import { SCHOOL_ADMIN_HANDLERS } from "./school-admin/handlers.ts";
 import type { AdminHandler, PublicHandler } from "./school-admin/http.ts";
 import { PUBLIC_STAFF_HANDLERS, STAFF_HANDLERS } from "./staff/handlers.ts";
 import { AUDIT_HANDLERS } from "./audit/handlers.ts";
+import { SYNC_HANDLERS } from "./sync/handlers.ts";
 import { checkRate, type RateLimiter } from "./security/rate-limit.ts";
 import { API_SECURITY_HEADERS } from "./security/headers.ts";
 
@@ -77,6 +78,7 @@ const handlers: Record<string, Handler> = {
   ...Object.fromEntries(Object.entries(SCHOOL_ADMIN_HANDLERS).map(([key, h]) => [key, adapt(h)])),
   ...Object.fromEntries(Object.entries(STAFF_HANDLERS).map(([key, h]) => [key, adapt(h)])),
   ...Object.fromEntries(Object.entries(AUDIT_HANDLERS).map(([key, h]) => [key, adapt(h)])),
+  ...Object.fromEntries(Object.entries(SYNC_HANDLERS).map(([key, h]) => [key, adapt(h)])),
   ...Object.fromEntries(Object.entries(PUBLIC_STAFF_HANDLERS).map(([key, h]) => [key, adaptPublic(h)])),
   "POST /v1/auth/login": async (c) => c.json(await login(c.get("deps"), await readBody(c, loginRequest))),
   "POST /v1/auth/refresh": async (c) => c.json(await refresh(c.get("deps"), await readBody(c, refreshRequest))),
@@ -85,7 +87,6 @@ const handlers: Record<string, Handler> = {
     return c.body(null, 204);
   },
   "GET /v1/me": async (c) => c.json(meOf(c.get("auth").ctx)),
-  "GET /v1/sync/bootstrap": async (c) => c.json(await bootstrap(c.get("deps"), c.get("auth"))),
   "POST /v1/sync/push": async (c) => c.json(await push(c.get("deps"), c.get("auth"), await readBody(c, pushRequest))),
   "GET /v1/admin/attendance/summary": async (c) => {
     const q = summaryQuery.safeParse(c.req.query());

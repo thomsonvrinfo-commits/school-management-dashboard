@@ -5,7 +5,7 @@
  *  - ApiFailure: the server answered and said no. The reason is in `code`.
  */
 import type {
-  AcceptInvitationRequest, AttendanceSummaryResponse, BootstrapResponse, CompletePasswordResetRequest, InvitationPreview, LoginRequest, PushRequest,
+  AcceptInvitationRequest, AttendanceSummaryResponse, BootstrapResponse, BootstrapUnchanged, CompletePasswordResetRequest, InvitationPreview, LoginRequest, PushRequest,
   PushResponse, TokenResponse,
 } from "@schoolpulse/contracts";
 import { getDeviceId, getStoredSession, saveStoredSession } from "./session.ts";
@@ -137,7 +137,9 @@ export const api = {
   async logout(refreshToken: string): Promise<void> {
     await readOrThrow<void>(await send("POST", "/v1/auth/logout", { refreshToken }));
   },
-  bootstrap: () => authed<BootstrapResponse>("GET", "/v1/sync/bootstrap"),
+  /** With `since` (the version already held) the server may answer "unchanged" instead of sending everything again. */
+  bootstrap: (since?: string) =>
+    authed<BootstrapResponse | BootstrapUnchanged>("GET", `/v1/sync/bootstrap${since ? `?since=${encodeURIComponent(since)}` : ""}`),
   push: (req: PushRequest) => authed<PushResponse>("POST", "/v1/sync/push", req),
   attendanceSummary: (query: { from?: string; to?: string } = {}) => {
     const qs = new URLSearchParams(Object.entries(query).filter(([, v]) => v) as [string, string][]).toString();

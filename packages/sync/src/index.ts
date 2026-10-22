@@ -210,3 +210,4 @@ export function syncState(input: { online: boolean; queue: readonly QueuedOp[]; 
   return { indicator: "synced", waiting, conflicts, failed, label: "Synced" };
 }
 export * from "./replica.ts";
+export * from "./polling.ts";
