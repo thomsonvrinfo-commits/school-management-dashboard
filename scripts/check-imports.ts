@@ -8,7 +8,7 @@ import { builtinModules } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const workspaces = ["apps/web", "apps/api", "packages/domain", "packages/contracts", "packages/sync", "packages/db"];
+const workspaces = ["apps/web", "apps/api", "packages/domain", "packages/contracts", "packages/sync", "packages/db", "e2e"];
 const builtins = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
 const problems: string[] = [];
 let files = 0;

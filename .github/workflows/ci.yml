@@ -1,0 +1,203 @@
+# Automatic checks for every push and pull request. NOTHING here deploys anything or touches any real database:
+# each job gets its own throw-away PostgreSQL that disappears when the job ends.
+#
+# Written without being able to run it (the machine it was written on cannot reach GitHub). The first run is the
+# real test of this file: if a step fails for a reason that is about the workflow rather than the code, fix the workflow.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The tests drive the psql command line against this scratch server and create/drop their own databases on it.
+  PSQL_TEST_CONN: host=localhost user=schoolpulse password=schoolpulse dbname=postgres
+
+jobs:
+  checks:
+    name: Tests, types, imports, migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: schoolpulse
+          POSTGRES_PASSWORD: schoolpulse
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U schoolpulse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: PostgreSQL client (the tests use psql)
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # There is no package-lock.json in the repository yet (it could not be created offline). Once one is committed,
+      # change this to `npm ci` and add `cache: npm` to setup-node.
+      - run: npm install --no-audit --no-fund
+      - name: Every import resolves and every package is declared
+        run: npm run check:imports
+      - name: Types
+        run: npm run typecheck
+      - name: Tests (unit and real PostgreSQL)
+        run: npm test
+      - name: The real migration runner, on an empty database, twice (the second run must change nothing)
+        env:
+          DATABASE_URL: postgres://schoolpulse:schoolpulse@localhost:5432/migrate_check
+        run: |
+          psql "$PSQL_TEST_CONN" -v ON_ERROR_STOP=1 -c "create database migrate_check"
+          npm run db:migrate
+          npm run db:migrate | tee /tmp/second-run.txt
+          grep -q "Database is up to date." /tmp/second-run.txt
+
+  driver:
+    name: Tests through the production database driver (postgres.js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Informational until its first green run: this is the first time the production driver meets the test suite.
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: schoolpulse
+          POSTGRES_PASSWORD: schoolpulse
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U schoolpulse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgres://schoolpulse:schoolpulse@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+
+  screens:
+    name: Screens render
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+      - run: npm install --no-audit --no-fund
+      - run: npm run check:render
+
+  build:
+    name: The web app builds, with its security headers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Build
+        env:
+          VITE_API_URL: https://api.example.invalid
+        run: npm run build:web
+      - name: The headers file exists and says what we expect
+        run: |
+          test -f apps/web/dist/index.html
+          grep -q "Content-Security-Policy: default-src 'none'" apps/web/dist/_headers
+          grep -q "connect-src 'self' https://api.example.invalid" apps/web/dist/_headers
+          ! grep -q "unsafe-eval" apps/web/dist/_headers
+      - name: A build without a valid API address must fail (it must never produce a wide-open policy)
+        run: |
+          if VITE_API_URL="https://a.example;b" npm run build:web; then echo "build accepted a bad VITE_API_URL" >&2; exit 1; fi
+
+  browser:
+    name: Browser check (Chromium, phone-sized)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Informational until its first green run: it has never run anywhere yet.
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: schoolpulse
+          POSTGRES_PASSWORD: schoolpulse
+          POSTGRES_DB: schoolpulse
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U schoolpulse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://schoolpulse:schoolpulse@localhost:5432/schoolpulse
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Database with the fictional dev school
+        run: |
+          npm run db:migrate
+          npm run db:seed:dev
+      - name: Start the API (a local Worker, not Cloudflare)
+        env:
+          # Where wrangler's local Hyperdrive stand-in connects (the same value as localConnectionString in wrangler.toml).
+          CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://schoolpulse:schoolpulse@localhost:5432/schoolpulse
+        run: |
+          echo "AUTH_SECRET=$(openssl rand -hex 32)" > apps/api/.dev.vars
+          cd apps/api
+          nohup npx wrangler dev --port 8787 --var ALLOWED_ORIGIN:http://localhost:4173 > /tmp/api.log 2>&1 &
+      - name: Build and serve the web app with its production headers
+        env:
+          VITE_API_URL: http://localhost:8787
+        run: |
+          npm run build:web
+          nohup npm run serve:web > /tmp/web.log 2>&1 &
+      - name: Wait for both
+        run: |
+          for i in $(seq 1 60); do
+            api=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8787/v1/me || true)
+            web=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4173/ || true)
+            # /v1/me answers 401 when nobody is signed in: that means the API is up and reading its routes
+            if [ "$api" = "401" ] && [ "$web" = "200" ]; then exit 0; fi
+            sleep 2
+          done
+          echo "--- API log"; cat /tmp/api.log; echo "--- web log"; cat /tmp/web.log
+          exit 1
+      - name: Browser tests
+        run: npm run e2e
+      - name: What the servers said (only when something failed)
+        if: failure()
+        run: |
+          echo "--- API log"; cat /tmp/api.log || true
+          echo "--- web log"; cat /tmp/web.log || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: e2e/test-results
+          if-no-files-found: ignore

@@ -54,7 +54,9 @@ export function contentSecurityPolicy(opts: HeaderOptions): string {
     "form-action 'self'",
     "frame-ancestors 'none'",
     "object-src 'none'",
-    "upgrade-insecure-requests",
+    // Pointless (and, for a local http API, harmful) when the API itself is plain http: that only ever means a developer's own
+    // computer, since apiOriginOf accepts http for localhost alone. A deployed app always has an https API and keeps the rule.
+    ...(opts.apiOrigin?.startsWith("http:") ? [] : ["upgrade-insecure-requests"]),
   ].join("; ");
 }
 

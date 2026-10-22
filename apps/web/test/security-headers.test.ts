@@ -44,6 +44,16 @@ test("data may only leave to the app's own origin and the API", () => {
   assert.equal(directive(policy("http://localhost:8787"), "connect-src"), "connect-src 'self' http://localhost:8787");
 });
 
+test("a deployed app (https API, or none) always upgrades insecure requests; only a local http API drops that rule", () => {
+  assert.ok(policy().includes("upgrade-insecure-requests"));
+  assert.ok(policy(null).includes("upgrade-insecure-requests"));
+  assert.ok(!policy("http://localhost:8787").includes("upgrade-insecure-requests"));
+  assert.ok(!policy("http://127.0.0.1:8787").includes("upgrade-insecure-requests"));
+  // …and the rest of the policy is the same either way
+  const strip = (p: string) => p.replace("; upgrade-insecure-requests", "").replace(/ http:\/\/[^;]+/, "").replace(/ https:\/\/[^;]+/, "");
+  assert.equal(strip(policy("http://localhost:8787")), strip(policy()));
+});
+
 test("every response carries the framing, sniffing, referrer, permission and transport protections", () => {
   const h = headersFor("/students", headerRules({ apiOrigin: API }));
   assert.equal(h["X-Content-Type-Options"], "nosniff");
