@@ -6,7 +6,12 @@ Database -> API -> Auth/Permissions -> Offline/Sync -> Real school records -> Ca
 
 Slice 1 implements everything up to Calculations for one record type (attendance). Slice 2 adds the real school records the register
 depends on: school profile and academic years, the student registry, classes and teacher assignments (see "School administration"
-below and `docs/SLICE-2-HANDOFF.md`). Intelligence and later layers are not started.
+below and `docs/SLICE-2-HANDOFF.md`). Phase P1 ("usable and proven foundation") then added staff onboarding, the activity log, security
+hardening, cheaper sync, automatic checks and the operator runbook (see "Staff, security and activity (P1)" below and `docs/P1-HANDOFF.md`).
+Teaching structure, honest attendance, intelligence and the later layers are not started.
+
+Other documents: `docs/SECURITY.md` (defences and what is still open), `docs/GOVERNANCE.md` (data held, who sees it, backup and restore,
+retention, legal position), `docs/RUNBOOK.md` (running, checking, deploying).
 
 ## Decisions
 
@@ -46,6 +51,15 @@ membership in the database, never from the request body. Not yet done: PostgreSQ
 - Failures are separated: no answer (offline, timeout, server error) keeps the operation and retries with backoff; an answer of
   "no" (forbidden, invalid) keeps it visible with the reason until the teacher discards it. Nothing is dropped silently.
 - A phone downloads a permission-filtered replica (its classes, students, today's timetable, 14 days of attendance) and nothing else.
+- **A refresh asks "has anything changed?" first.** The replica carries a `version`: a SHA-256 of its contents (never of the time), mixed with
+  the user id, so it needs no counter or trigger that a forgotten code path could fail to update. `GET /v1/sync/bootstrap?since=<version>`
+  answers about 100 bytes (`unchanged`, plus the server's time and today's date) when it still matches, and the whole replica otherwise.
+  A changed permission (a class assigned or removed) changes the content, so it changes the version. Replica queries have stable
+  tie-breakers so two children with the same name cannot reorder and change it.
+- **Polling slows down when nothing happens.** The decisions are pure functions in `packages/sync/src/polling.ts`: 30 seconds, doubling every
+  second quiet answer up to 5 minutes; slowest at once when the app is in the background; no timer while offline; quick again for registers
+  waiting to send. A full download is forced when nothing is held, the stored version is malformed, the last full copy is over 6 hours old, or
+  after sending registers. Old and new clients and servers keep working together (no `since` means everything; no `version` means never ask).
 
 ## School administration (Slice 2)
 
@@ -65,16 +79,45 @@ membership in the database, never from the request body. Not yet done: PostgreSQ
 - **Mistakes in old data are reported, not hidden**: `packages/db/preflight/` lists legacy rows that would stop the migration, and
   rows that predate the new length limits get a clear 409 when edited.
 
+## Staff, security and activity (P1)
+
+- **Joining and recovery without email.** The head issues an invitation or a password-reset link and hands it over by hand (WhatsApp, text,
+  in person). A link is 256 random bits, stored only as a SHA-256 (`staff_tokens`, migration 0003), single-use (claimed atomically),
+  expiring and revocable. The secret sits after `#` in the address, which a browser never sends to a server. Three public endpoints take
+  a link (`invitations/preview`, `invitations/accept`, `password-reset/complete`); they get no signed-in caller, so the school comes from the
+  link and cannot come from anywhere else.
+- **Who manages whom.** A head manages teachers only. Head accounts are created and recovered by the platform operator's command line
+  (`apps/api/scripts/operator.ts`), so one head cannot lock out or take over another. No new roles were added.
+- **The activity log is read through a deny-by-default describer.** `GET /v1/audit` (head only, newest first, cursor paging, filters) turns
+  each stored action into plain words with a per-action function and never sends the raw stored details; a test fails if the API writes an
+  action nobody described.
+- **Defence in depth in the browser and at the edge.** The web build writes a strict Content-Security-Policy and other headers from the API
+  address (`apps/web/scripts`), the API sets its own, and an optional Cloudflare rate-limit binding slows guessing on public endpoints
+  (per endpoint and address, never per account, and it lets people in if the limiter itself breaks). See `docs/SECURITY.md` for what is
+  verified and what only a deployment can show.
+- **Handlers are framework-free where it matters most.** School administration, staff, activity and sync's bootstrap are plain
+  `(deps, auth, request) -> {status, body}` functions that the tests call directly; sign-in, `me`, the sync push and the attendance
+  summary are still written inline in `app.ts` (Slice 1). `routes.ts` is the single table of routes and policies either way: the app
+  refuses to start if a route has no handler or a handler has no policy.
+- **Automatic checks.** `.github/workflows/ci.yml` runs the tests on a throw-away PostgreSQL, the real migration runner twice on an empty
+  database, the render checks, a web build that must write the headers and refuse a bad API address, the tests again through the production
+  driver, and a phone-sized Chromium run (`e2e/`). Written but not yet run on GitHub.
+
 ## Known gaps (to close before real schools use it)
 
-1. **Login rate limiting is not implemented.** Add a Cloudflare rate-limiting rule or Turnstile on `/v1/auth/login`.
-2. **PBKDF2 uses 100,000 iterations**, which I believe is the Workers WebCrypto cap, and below OWASP's 600,000 guidance. Verify the
-   cap; raise the count or move to a memory-hard hash if the platform allows. The count is stored per hash so it can be raised later.
+1. **Rate limiting is written but not switched on.** The code and an optional binding exist; the `[[ratelimits]]` block in `wrangler.toml` is
+   commented out and the binding has never run on Cloudflare (`docs/SECURITY.md`, section 2).
+2. **PBKDF2 uses 100,000 iterations**, the Workers WebCrypto cap, below OWASP's 600,000 guidance. Compensated by password length rules
+   (10 or more characters, common passwords refused). The count is stored per hash so it can be raised later.
 3. **Accounts in more than one school** must pass `schoolId` at login; there is no school picker in the app yet.
-4. **No row-level security** in PostgreSQL yet.
-5. **Local data is not encrypted at rest** in IndexedDB. Sign-out and "a different person signs in" wipe it. Consider device-level protections before holding finance data.
-6. **Refresh tokens live in IndexedDB**, so an XSS bug would expose them. Keep a strict Content-Security-Policy on the Pages site.
-7. **Replica refresh downloads the whole 14-day window** each time. Fine for one teacher's classes; add incremental pull when it matters.
-8. **No password reset or user management screens.** Accounts come from the seed or direct SQL for now. (School setup, students, classes and teacher assignments now have screens: Slice 2.)
-9. **Import (CSV/Excel), audit viewer, notifications, global search** are planned, not built.
-10. **Slice 2 deliberately leaves out**: a school-admin role below the head, bulk moves and year-end promotion, CSV import, guardians and contact details, an audit viewer screen.
+4. **No row-level security** in PostgreSQL yet. Designed, with the evidence needed before it is switched on, in `docs/GOVERNANCE.md` section 4.
+5. **Local data is not encrypted at rest** in IndexedDB. Sign-out and "a different person signs in" wipe it; a lost phone keeps its copy until
+   the head switches the teacher off (the next sync is then refused). Phones used for registers should have a screen lock.
+6. **Refresh tokens live in IndexedDB**, so an XSS bug would expose them. The generated Content-Security-Policy is the defence; it has
+   not been seen working in a real browser or on Cloudflare Pages (`docs/SECURITY.md`).
+7. **Staff screens exist; learner-facing and guardian accounts do not.** Head and teacher are the only roles.
+8. **Import (CSV/Excel), notifications and global search** are planned, not built.
+9. **Left out on purpose**: a school-admin role below the head, bulk moves and year-end promotion, guardians and contact details, remote wipe,
+   refresh-token reuse detection, multi-factor sign-in, a read log (created with the first screen that shows a development record).
+10. **Nothing has been deployed.** The schema, API and web app have only been run against throw-away local databases; the browser, Vite build,
+    Hono adapter, production database driver and Cloudflare behaviour have not been exercised in this environment.
