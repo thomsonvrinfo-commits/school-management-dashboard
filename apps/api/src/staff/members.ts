@@ -16,6 +16,8 @@ import { hashOpaqueToken, newOpaqueToken } from "../auth/token.ts";
 import { audit, ensure, requireAction, schoolIdOf, withConstraints, type ConstraintRule } from "../school-admin/common.ts";
 
 const notFound = () => new HttpError(404, "not_found", "Not found.");
+const headInvitationWaiting = () =>
+  new HttpError(409, "head_invitation", "That is a head teacher's invitation. Those are handled by the platform operator, not from here.");
 
 const toMember = (m: StaffMemberRow): StaffMember => ({
   membershipId: m.membershipId, userId: m.userId, name: m.name, email: m.email, role: m.role, active: m.active, joinedAt: m.joinedAt,
@@ -64,6 +66,10 @@ export async function inviteStaff(deps: Deps, auth: AuthContext, req: InviteStaf
   return withConstraints(linkRules, () =>
     deps.staff.transaction(async (tx) => {
       ensure(validateInvitation(await tx.findStaffByEmail(schoolId, email)));
+      // A head's invitation belongs to the platform operator. Replacing it from here would kill the operator's link
+      // (and could turn an invited head into a teacher), so this refuses instead.
+      const waiting = await tx.listOpenInvitations(schoolId, now.toISOString());
+      if (waiting.some((w) => w.email === email && w.role === "head")) throw headInvitationWaiting();
       const replaced = await tx.revokeWaitingInvitations(schoolId, email, now.toISOString());
       await tx.insertToken({
         id, schoolId, purpose: "invite", email, name, role: "teacher", userId: null, tokenHash, expiresAt, createdBy: auth.ctx.user.id,
@@ -83,6 +89,7 @@ export async function revokeInvitation(deps: Deps, auth: AuthContext, invitation
   await deps.staff.transaction(async (tx) => {
     const row = await tx.getToken(schoolId, invitationId);
     if (!row || row.purpose !== "invite") throw notFound();
+    if (row.role === "head") throw headInvitationWaiting();
     const revoked = await tx.revokeInvitation(schoolId, invitationId, deps.now().toISOString());
     if (!revoked) throw new HttpError(409, "invitation_not_waiting", "That invitation was already used or withdrawn.");
     await audit(tx, auth, "staff.invitation_revoked", "staff_invitation", invitationId, {});

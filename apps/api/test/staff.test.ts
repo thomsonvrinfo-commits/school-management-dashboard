@@ -9,7 +9,9 @@ import {
   invitationPreview, resetLinkResponse, staffListResponse, tokenResponse, type InviteStaffResponse,
 } from "@schoolpulse/contracts";
 import { pgTestsEnabled } from "@schoolpulse/db/testing";
+import { createStaffDb } from "@schoolpulse/db";
 import { hashOpaqueToken } from "../src/auth/token.ts";
+import { inviteHead, type OperatorDeps } from "../src/staff/operator.ts";
 import { HttpError } from "../src/errors.ts";
 import { authenticate, login, refresh } from "../src/services/auth.ts";
 import { DEV_IDS, EXTRA, call, callPublic, expectError, expectOk, makeAdminFixture, type AdminFixture } from "./admin-support.ts";
@@ -480,4 +482,30 @@ test("a teacher is refused every head-only staff action", { skip }, async () => 
     expectError(await call(f, f.chipo, key, { params: { membershipId: someone } }), 403, "forbidden");
   }
   await authenticate(f.deps, f.tendai.header);
+});
+
+// ---------- a head's invitation is not the head's to withdraw or replace ----------
+
+test("a head cannot withdraw or replace another head's invitation: that link belongs to the platform operator", { skip }, async () => {
+  const ops: OperatorDeps = { staff: createStaffDb(f.t.runner), now: () => new Date(NOW_ISO), newId: () => crypto.randomUUID() };
+  const email = "colead@mavambo.example";
+  await q(`update schools set code = 'MAV' where id = $1`, [DEV_IDS.school]);
+  const { invitation } = await inviteHead(ops, { schoolCode: "MAV", headEmail: email, headName: "Mr. Colead" });
+  const waiting = (await list()).invitations.find((i) => i.email === email)!;
+  assert.ok(waiting, "the head can SEE the waiting head invitation");
+
+  // withdrawing it from the head's screen is refused, and the operator's link still works
+  expectError(await call(f, f.head, "DELETE /v1/staff/invitations/:id", { params: { id: waiting.id } }), 409, "head_invitation");
+  expectOk(await preview(invitation.token));
+
+  // so is "inviting" the same address as a teacher, which used to replace the operator's link
+  expectError(await call(f, f.head, "POST /v1/staff/invitations", { body: { email } }), 409, "head_invitation");
+  const still = expectOk(await preview(invitation.token)).body as { role: string };
+  assert.equal(still.role, "head", "the invited head is still invited as a head");
+  assert.equal((await list()).invitations.filter((i) => i.email === email).length, 1);
+
+  // a teacher's invitation can still be replaced and withdrawn as before
+  const mine = await invite(freshEmail());
+  const again = await invite(mine.invitation.email);
+  expectOk(await call(f, f.head, "DELETE /v1/staff/invitations/:id", { params: { id: again.invitation.id } }), 204);
 });
