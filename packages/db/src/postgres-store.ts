@@ -104,7 +104,7 @@ export class PostgresStore implements Store {
     return this.db.query<ClassRow>(
       `select c.id, c.name, c.grade_level as "gradeLevel"
          from classes c join class_teachers ct on ct.school_id = c.school_id and ct.class_id = c.id
-        where c.school_id = $1 and ct.user_id = $2 and c.status = 'active' order by c.name`,
+        where c.school_id = $1 and ct.user_id = $2 and c.status = 'active' order by c.name, c.id`,
       [schoolId, userId],
     );
   }

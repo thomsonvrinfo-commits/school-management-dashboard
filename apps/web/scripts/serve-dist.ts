@@ -22,7 +22,15 @@ const TYPES: Record<string, string> = {
 };
 
 createServer((req, res) => {
-  const path = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
+  let path: string;
+  try {
+    path = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
+  } catch {
+    // "/%" and the like: not a path. Say so instead of letting the exception stop the whole server.
+    res.writeHead(400, { "content-type": "text/plain" });
+    res.end("Bad request");
+    return;
+  }
   let file = normalize(join(dist, path));
   // Never serve anything outside dist/.
   if (file !== dist && !file.startsWith(dist + sep)) {

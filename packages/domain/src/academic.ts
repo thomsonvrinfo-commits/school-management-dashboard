@@ -66,6 +66,8 @@ export function yearOn<T extends DateRange>(date: string, years: readonly T[]): 
 /** True for an IANA time-zone name the runtime knows ("Africa/Harare"). Used when the school's time zone is edited. */
 export function isValidTimeZone(zone: string): boolean {
   if (zone.length === 0 || zone.length > 64) return false;
+  // The runtime accepts "+02:00", but PostgreSQL reads the sign the other way round, so day boundaries would be hours out.
+  if (/^[+\-\d]/.test(zone)) return false;
   try {
     new Intl.DateTimeFormat("en-CA", { timeZone: zone });
     return true;

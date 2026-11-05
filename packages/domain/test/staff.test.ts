@@ -31,7 +31,9 @@ test("password: length is what counts, and a long phrase with spaces is welcome"
   assert.equal(code(validatePassword("")), "password_too_short");
   assert.equal(validatePassword("x1y2z3q4r5"), null, "exactly the minimum length is allowed");
   assert.equal(code(validatePassword("x".repeat(PASSWORD_MAX + 1))), "password_too_long");
-  assert.equal(validatePassword("abcdefgh".repeat(16)), null, "exactly the maximum length (128) is allowed");
+  // (not "abcdefgh" repeated: an alphabet run said sixteen times is exactly the kind of password the rule refuses)
+  assert.equal(validatePassword("aB3$eF9&hJ1#kL5%".repeat(8)), null, "exactly the maximum length (128) is allowed");
+  assert.equal([..."aB3$eF9&hJ1#kL5%".repeat(8)].length, PASSWORD_MAX);
 });
 
 test("password: counts characters, not UTF-16 units, so emoji and accents are not double-counted", () => {
@@ -114,4 +116,19 @@ test("a reset link needs an active teacher whose account is used at this school 
   assert.equal(code(validateResetTarget({ role: "teacher", active: false }, 1)), "member_deactivated");
   assert.equal(code(validateResetTarget({ role: "teacher", active: true }, 2)), "shared_account");
   assert.equal(code(validateResetTarget({ role: "teacher", active: true }, 3)), "shared_account");
+});
+
+test("password: a common word with digits, capitals or symbols added is still refused (the review found 'Password123!' was accepted)", () => {
+  for (const pw of [
+    "password12345", "Password123!", "PASSWORD-2024!", "p@ssw0rd12345", "P@ssw0rd!2024", "qwerty123456", "iloveyou1234", "letmein12345",
+    "1qaz2wsx3edc", "welcome12345", "passwordpassword", "football123", "Qwerty!2024", "schoolpulse2026", "Admin#12345",
+    "12345678901", "0987654321098", "qwertyuiopas", "zyxwvutsrqpo",
+  ]) assert.equal(code(validatePassword(pw)), "password_too_common", pw);
+});
+
+test("password: ordinary phrases and passwords that merely CONTAIN a common word are still welcome", () => {
+  for (const pw of [
+    "correct horse battery staple", "pa55 the salt and pepper", "my password is much longer now", "teacher of grade seven maths", "Sunrise over Harare at six",
+    "tr0ub4dor&3x", "blue-elephant-7-lantern", "ñandú-café-señor",
+  ]) assert.equal(validatePassword(pw), null, pw);
 });

@@ -24,8 +24,29 @@ export function mustLimit(method: string, path: string, routes: readonly RouteSp
   return routes.some((r) => r.access === "public" && r.method === method && r.path === path);
 }
 
-/** One bucket per endpoint and address, so a busy refresh endpoint cannot use up the sign-in allowance. */
-export const limitKey = (path: string, address: string | undefined | null): string => `${path}|${address?.trim() || "unknown"}`;
+/**
+ * Who counts as "the same caller". An IPv4 address is one caller. An IPv6 customer is normally handed a whole /64 (2^64
+ * addresses), so counting each address separately would let one machine hop to a fresh counter on every attempt: the
+ * first four groups are the caller. An IPv4 address written the IPv6 way (::ffff:203.0.113.7) is that IPv4 address.
+ */
+export function callerOf(address: string | undefined | null): string {
+  const a = (address ?? "").trim().toLowerCase();
+  if (a === "") return "unknown";
+  if (!a.includes(":")) return a;
+  const mapped = /^(?:0{0,4}:){2,5}(?:ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/.exec(a);
+  if (mapped) return mapped[1]!;
+  const halves = a.split("::");
+  if (halves.length > 2) return a;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  if (halves.length === 1 && head.length !== 8) return a;
+  const groups = halves.length === 2 ? [...head, ...Array<string>(Math.max(0, 8 - head.length - tail.length)).fill("0"), ...tail] : head;
+  if (groups.length !== 8 || !groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return a;
+  return `${groups.slice(0, 4).map((g) => g.padStart(4, "0")).join(":")}::/64`;
+}
+
+/** One bucket per endpoint and caller, so a busy refresh endpoint cannot use up the sign-in allowance. */
+export const limitKey = (path: string, address: string | undefined | null): string => `${path}|${callerOf(address)}`;
 
 export const TOO_MANY = () => new HttpError(429, "too_many_requests", "Too many attempts. Wait a minute and try again.");
 

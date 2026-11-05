@@ -7,8 +7,9 @@
  *   invite-head   --school MAV --head-email head@school.example [--head-name "..."]
  *   reset-head    --school MAV --head-email head@school.example
  *
- * SAFE BY DEFAULT: without --apply nothing is written; the command checks its input, says which database it would act on
- * (host and name only, never the password) and what it would do. Add --apply to do it. The link it prints is the only
+ * SAFE BY DEFAULT: without --apply nothing is written and the database is never opened; the command only checks that the
+ * required options are present and says which database it WOULD act on (host and name only, never the password). The rest
+ * (a valid email, a school that exists, a person not already on the staff) is checked only when --apply runs. Add --apply to do it. The link it prints is the only
  * time its secret is shown; hand it to the head teacher yourself (it is meant for one person and works once).
  */
 import postgres from "postgres";

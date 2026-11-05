@@ -158,7 +158,12 @@ export async function refreshReplica(opts: { forceFull?: boolean } = {}): Promis
   const held = await getMeta<ReplicaMeta>("replica");
   const b = await api.bootstrap(sinceFor(held, Date.now(), opts));
   const meta = replicaMetaAfter(held, b, new Date().toISOString());
-  if (!meta) return refreshReplica({ forceFull: true }); // "unchanged" about a copy we do not hold: never happens, but never trust it
+  if (!meta) {
+    // "unchanged" about a copy we do not hold: never happens, but never trust it. Ask once for everything; if even that is
+    // answered "unchanged" the server is broken, so stop (the engine retries later with a back-off) instead of looping.
+    if (opts.forceFull) throw new Error("The server answered 'unchanged' to a request for the whole copy.");
+    return refreshReplica({ forceFull: true });
+  }
   if ("unchanged" in b) {
     await setMeta("replica", meta);
     return "unchanged";

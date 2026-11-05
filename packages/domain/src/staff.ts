@@ -45,6 +45,35 @@ const COMMON = new Set([
   "schoolpulse", "schoolpulse1", "zimbabwe123", "harare12345", "teacher1234", "headmaster1", "changeme123", "changemenow",
 ]);
 
+// The word underneath a password. "Password123!", "PASSWORD-2024" and "p@ssword1" are all "password" with decoration, and
+// decoration is the first thing anyone guesses. A passphrase of several words is never equal to one of these.
+const COMMON_WORDS = new Set([
+  "password", "passwd", "passw0rd", "pass", "qwerty", "qwertyuiop", "asdfgh", "asdfghjkl", "zxcvbn", "zxcvbnm", "azerty", "iloveyou",
+  "letmein", "welcome", "football", "baseball", "basketball", "soccer", "dragon", "monkey", "master", "admin", "administrator", "login",
+  "secret", "sunshine", "princess", "superman", "batman", "shadow", "freedom", "whatever", "starwars", "hello", "hunter", "trustno",
+  "abc", "abcdef", "abcdefgh", "changeme", "default", "test", "testing", "user", "school", "schoolpulse", "teacher", "headmaster",
+  "headteacher", "principal", "harare", "bulawayo", "zimbabwe", "mavambo", "kingdom", "blessed", "jesus", "godisgood", "lovely",
+]);
+// Runs along a keyboard or the alphabet: any stretch of these, forwards or backwards, is as guessable as the whole.
+const RUNS = ["012345678901234567890123456789", "abcdefghijklmnopqrstuvwxyz", "qwertyuiopasdfghjklzxcvbnm", "1q2w3e4r5t6y7u8i9o0p", "1qaz2wsx3edc4rfv5tgb", "zaq12wsxcde3"];
+
+function looksCommon(lower: string): boolean {
+  const compact = lower.replace(/[\s_-]/g, "");
+  if (COMMON.has(compact)) return true;
+  // the letters alone, and the letters after the usual look-alike swaps ("p@ssw0rd" is "password"). Decoration at the END
+  // (digits, a year, "!") is cut off before swapping, so "p@ssw0rd2024" does not turn its year into letters.
+  const swapped = lower.replace(/[^\p{L}]+$/u, "").replace(/[@$013457]/g, (c) => ({ "@": "a", $: "s", "0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t" } as Record<string, string>)[c]!);
+  for (const text of [lower, swapped]) {
+    const letters = text.replace(/[^\p{L}]/gu, "");
+    if (COMMON_WORDS.has(letters)) return true;
+    // one common word said twice or more ("passwordpassword")
+    for (const w of COMMON_WORDS) if (w.length >= 4 && letters.length >= w.length * 2 && letters.length % w.length === 0 && w.repeat(letters.length / w.length) === letters) return true;
+  }
+  const plain = lower.replace(/[^\p{L}\p{N}]/gu, "");
+  const backwards = [...plain].reverse().join("");
+  return plain.length >= 8 && RUNS.some((r) => r.includes(plain) || r.includes(backwards));
+}
+
 /**
  * What a new password must satisfy. Length is what matters, so there are no "one capital, one symbol" rules; a long
  * phrase is welcome. Spaces are allowed and never trimmed. `about` lets the rule refuse a password built from the
@@ -57,7 +86,7 @@ export function validatePassword(password: string, about: { email?: string; name
   if (new Set(chars).size < 5) return problem("password_too_simple", "That password repeats too few different characters.", field);
 
   const lower = password.toLowerCase();
-  if (COMMON.has(lower.replace(/[\s_-]/g, ""))) return problem("password_too_common", "That password is too easy to guess. Choose something less common.", field);
+  if (looksCommon(lower)) return problem("password_too_common", "That password is too easy to guess. Choose something less common.", field);
 
   const parts: string[] = [];
   const local = about.email?.split("@")[0]?.toLowerCase();

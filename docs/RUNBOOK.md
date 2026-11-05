@@ -131,6 +131,10 @@ If `/accept` comes back without a `Content-Security-Policy`, stop: do not send r
 ### Rolling back
 
 - **Web / API:** redeploy the previous version from Cloudflare's deployment list. Both are stateless.
+- **Undoing 0003 or 0004 by hand (only after a backup, and only if nothing needs them):** 0003 is `drop table staff_tokens;` and 0004 is
+  `drop index audit_school_id_idx; drop index audit_school_actor_idx;`. Each must ALSO be followed by
+  `delete from schema_migrations where name = '0003_staff_onboarding.sql';` (or `'0004_audit_viewer.sql'`), otherwise the migration runner believes
+  it is still applied and will never apply it again.
 - **Database:** no migration deletes a row. They add tables, columns and indexes; migration 0002 also relaxes one rule (class names
   are unique per school *and academic year* instead of per school) and fills in two new student columns from existing rows
   (details and the way back: `docs/SLICE-2-HANDOFF.md`). To undo a migration, restore the backup taken before it; the previous

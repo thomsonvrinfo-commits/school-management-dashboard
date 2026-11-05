@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { HttpError } from "../src/errors.ts";
 import { ROUTES, routeKey } from "../src/routes.ts";
 import { API_SECURITY_HEADERS } from "../src/security/headers.ts";
-import { checkRate, limitKey, mustLimit, type RateLimiter } from "../src/security/rate-limit.ts";
+import { callerOf, checkRate, limitKey, mustLimit, type RateLimiter } from "../src/security/rate-limit.ts";
 
 const publicKeys = ROUTES.filter((r) => r.access === "public").map(routeKey).sort();
 
@@ -85,4 +85,23 @@ test("API responses are data only: not framed, not sniffed, not cached, no Refer
   assert.equal(API_SECURITY_HEADERS["Content-Security-Policy"], "default-src 'none'; frame-ancestors 'none'");
   assert.equal(API_SECURITY_HEADERS["Referrer-Policy"], "no-referrer");
   for (const [k, v] of Object.entries(API_SECURITY_HEADERS)) assert.ok(v.length > 0 && !/[\r\n]/.test(v), k);
+});
+
+test("an IPv6 caller is counted per /64, so hopping inside it does not earn a fresh allowance", () => {
+  const a = "2001:db8:abcd:12:aaaa:bbbb:cccc:dddd";
+  assert.equal(callerOf(a), "2001:0db8:abcd:0012::/64");
+  assert.equal(limitKey("/v1/auth/login", a), limitKey("/v1/auth/login", "2001:db8:abcd:12:1:2:3:4"), "same /64, same bucket");
+  assert.equal(limitKey("/v1/auth/login", a), limitKey("/v1/auth/login", "2001:DB8:ABCD:12::1"), "case and :: shorthand do not matter");
+  assert.notEqual(limitKey("/v1/auth/login", a), limitKey("/v1/auth/login", "2001:db8:abcd:13:aaaa:bbbb:cccc:dddd"), "a different /64 is a different caller");
+  assert.equal(callerOf("2001:db8::"), "2001:0db8:0000:0000::/64");
+  assert.equal(callerOf("::1"), "0000:0000:0000:0000::/64");
+});
+
+test("an IPv4 address is one caller, however it is written, and anything unreadable is kept as it is", () => {
+  assert.equal(callerOf("203.0.113.7"), "203.0.113.7");
+  assert.equal(callerOf("::ffff:203.0.113.7"), "203.0.113.7", "an IPv4 address written the IPv6 way is that IPv4 address");
+  assert.equal(callerOf(" 203.0.113.7 "), "203.0.113.7");
+  assert.equal(callerOf(undefined), "unknown");
+  assert.equal(callerOf(""), "unknown");
+  for (const odd of ["not-an-address", "1:2:3", "1::2::3", "gggg::1", "1:2:3:4:5:6:7:8:9"]) assert.equal(callerOf(odd), odd);
 });

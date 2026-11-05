@@ -9,12 +9,12 @@ Read with: `docs/ARCHITECTURE.md` (how it fits together), `docs/SECURITY.md`, `d
 
 ## 1. Status in one paragraph
 
-P1 is built and tested as far as this environment allows: **499 tests, 498 pass, 0 fail**, the one remaining test is a check that only
-runs in the automatic pipeline (with `PSQL_TEST_CONN` set; without a database 236 pass and 263 are skipped, none fail), plus **49 screen
-render checks** that pass. The type checker reports nothing except missing packages that cannot be installed here. What has **never
+P1 is built and tested as far as this environment allows: **514 tests, 513 pass, 0 fail**, the one remaining test is a check that only
+runs in the automatic pipeline (with `PSQL_TEST_CONN` set; the whole suite also passes sent to the database the way the production driver
+sends it, `PSQL_TEST_EXTENDED=1`), plus **49 screen render checks** that pass. The type checker reports nothing except missing packages that cannot be installed here. What has **never
 run**: the Hono wiring, the Vite build, the screens in a browser, the Dexie/IndexedDB glue, the production database driver, the
 automatic checks on GitHub, the browser tests in `e2e/`, and anything on Cloudflare. They are written, and the first run on a real
-machine is their real test (section 4). **The independent review of this stage did not happen** (section 5).
+machine is their real test (section 4). **Two of the three independent reviews have been done and their findings fixed or recorded; the third (documents, workflow, restore drill) has not** (section 5).
 
 ## 2. What the product did before and what it does now
 
@@ -67,12 +67,41 @@ the workflow runs. Anything that fails there is a real finding, not a surprise: 
 
 ## 5. Review status
 
-Independent review (people or agents who have not seen the code written) was planned for three areas: staff onboarding and
-security; the activity log and cheaper sync; and the documents, workflow and restore drill against the code. All three reviewers were
-started and **all three were stopped by a usage limit before reporting anything**; a retry stopped the same way. **No independent review
-result exists for P1.** The only checking this stage has had is the builders' own: the tests, deliberate breakage of the logic to see the
-tests catch it (done for staff onboarding, the activity log, cheaper sync and the restore drill), reading, and a type check.
-Treat P1 as **unreviewed** until the three reviews are run. Slice 2 did get an independent review.
+Independent review (reviewers who had not seen the code written, told to find defects and prove them by running things) was planned for
+three areas. Usage limits stopped all three the first time; two have since reported.
+
+**Staff onboarding and security: reviewed.** No way for one school to reach another's data was found. Findings and what happened:
+
+| Finding | Status |
+|---|---|
+| A head could withdraw or replace another head's invitation (the operator's link) | **Fixed**, with a test: such a call is now refused (`head_invitation`). |
+| "Not a common password" was a 24-entry list: `Password123!`, `qwerty123456`, `iloveyou1234` were accepted | **Improved**, with tests: common words are recognised under capitals, digits, a year, `!` and look-alike swaps, and keyboard and alphabet runs are refused. Still a short list, not a breach database. |
+| Rate limiting counted each IPv6 address separately, so one machine could hop inside its /64 | **Fixed**, with tests: an IPv6 caller is counted per /64. |
+| The local test server (`serve:web`) crashed on a malformed address such as `/%` | **Fixed** (answers 400). |
+| Overclaiming wording: "every administrative change" is logged (the operator's commands write no row); the dry run "checks its input" (it only checks the options are present); the undo note for 0003 forgot the `schema_migrations` row | **Corrected** in `SECURITY.md`, the operator script and `RUNBOOK.md`. |
+| A person who joins a second school with an existing account cannot sign in again from the web (no school picker) | **Open, recorded** in `SECURITY.md`. Needs a screen; to be done before any teacher works at two schools. |
+| Invitations reveal whether an email already has an account; an unverified address can be taken first | **Open, recorded.** Needs email verification (P7). |
+| A narrow race between a password reset and a second-school invitation finishing at the same instant | **Open, recorded.** The ordinary sequential case is tested. |
+| Rate limiting is off until you switch it on | Already documented; unchanged. |
+
+**Activity log and cheaper sync: reviewed.** No raw stored details or another school's rows can reach the Activity screen; the sync
+fingerprint covers everything the phone shows and never leaks across users. Findings:
+
+| Finding | Status |
+|---|---|
+| **Serious:** the Activity screen's first page (and "Show older") would have failed on the real database driver: the query sent a time-zone parameter nothing used, which PostgreSQL refuses. The test runner pastes values into the text, so no test could see it | **Fixed.** The test runner can now send statements the way the driver does (`PSQL_TEST_EXTENDED=1`) and the whole suite passes that way; a database-free test checks every parameter sent is used. Both fail on the old query (checked). |
+| A school time zone written as `+02:00` was accepted and would put day boundaries hours out | **Fixed**: offsets are refused. |
+| The class list order was not fully fixed (two classes can share a name), which could cause one needless full download | **Fixed** (tie-breaker added). |
+| The sync engine could in theory recurse without end if a broken server answered "unchanged" to a full request | **Fixed** (it now stops and retries later). |
+| Two narrow phone-side cases (discarding a failed register while a refresh is in flight; "keep theirs" when the server's row changed between the push and the refresh) could leave a stale copy until the next full refresh | **Open, reasoned only.** They sit in the part of the engine that needs a real browser to test (Dexie); they are repaired by the 6-hour full refresh at the latest. |
+
+**Documents, GitHub workflow and restore drill: NOT yet reviewed.** That reviewer was stopped by a usage limit twice. Until it has run, treat
+`docs/GOVERNANCE.md`, `.github/workflows/ci.yml` and `e2e/` as the builders' own work, unchecked by anyone else.
+
+**Where some of these fixes came from.** When this section was written, a set of finished-looking changes was already sitting uncommitted in the
+workspace (the test-runner mode, the activity-query fix, and the head-invitation guard with its test). They were not made by an
+earlier step I can point to, and the reviewers had been told to change nothing, so their origin is uncertain. They were read in full,
+proven against the old code, run in both test styles and then kept; the commit messages say so.
 
 ## 6. Safe choices made on your behalf (all easy to change)
 
@@ -95,4 +124,4 @@ is hosted and how it is backed up**, **how much lost data or downtime a school c
 P2 (teaching structure: subjects, who teaches what and when, and honest attendance: a day nobody took a register is *unknown*, not
 *present*), then P3 attendance intelligence, P4 assessment, P5 development record and support, P6 school conditions, P7 communication,
 P8 AI-assisted intelligence last, on top of evidence that already exists. Before P2 starts, the sensible order is: push the branch and let the
-workflow run, fix whatever it finds, run the three reviews, then deploy to a test environment you control.
+workflow run, fix whatever it finds, run the one review still outstanding (documents, workflow, restore drill), then deploy to a test environment you control.

@@ -56,3 +56,9 @@ test("rangeContains and yearOn find the year a date belongs to", () => {
   assert.equal(yearOn("2026-10-08", years)?.id, "b");
   assert.equal(yearOn("2026-12-20", years), undefined);
 });
+
+test("a school time zone is a name the database reads the same way: offsets like +02:00 are refused", async () => {
+  const { isValidTimeZone } = await import("../src/index.ts");
+  for (const ok of ["Africa/Harare", "UTC", "Europe/London", "America/Argentina/Buenos_Aires"]) assert.equal(isValidTimeZone(ok), true, ok);
+  for (const bad of ["+02:00", "-05:00", "02:00", "+2", "", "Not/AZone", "x".repeat(65)]) assert.equal(isValidTimeZone(bad), false, bad);
+});
