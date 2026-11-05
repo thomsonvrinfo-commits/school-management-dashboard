@@ -8,12 +8,13 @@ import { NetworkFailure, ApiFailure, api } from "../lib/api.ts";
 import { toFailure } from "../lib/admin-forms.ts";
 import { acceptInvitation, authStore } from "../lib/auth.ts";
 import { useStore } from "../lib/hooks.ts";
+import { browserOnline, explainNoAnswer } from "../lib/no-answer.ts";
 import { forgetLinkToken } from "../lib/link-token.ts";
 import { ACCEPT_FIELDS, LINK_ENDED, emptyAcceptForm, toAcceptRequest, validateAccept } from "../lib/staff-forms.ts";
 import { useFormState } from "../lib/use-form-state.ts";
 import { LinkEnded, LinkPage, sessionStorageOrNull, useLinkToken } from "./link-page.tsx";
 
-type Load = { status: "loading" } | { status: "ready"; preview: InvitationPreview } | { status: "ended"; code: string | undefined } | { status: "offline" };
+type Load = { status: "loading" } | { status: "ready"; preview: InvitationPreview } | { status: "ended"; code: string | undefined } | { status: "offline"; message: string };
 
 /** Where an invitation link lands: shows who is inviting, lets the person set up (or join with) their account, and signs them in. */
 export function AcceptInvitation() {
@@ -36,7 +37,7 @@ export function AcceptInvitation() {
       },
       (e: unknown) => {
         if (!current) return;
-        if (e instanceof NetworkFailure) setLoad({ status: "offline" });
+        if (e instanceof NetworkFailure) setLoad({ status: "offline", message: explainNoAnswer(e, browserOnline(), "Connect to the internet to open your invitation.") });
         else setLoad({ status: "ended", code: e instanceof ApiFailure ? e.code : undefined });
       },
     );
@@ -57,7 +58,7 @@ export function AcceptInvitation() {
   if (load.status === "offline") {
     return (
       <LinkPage title="Join your school">
-        <Notice tone="error">You are offline. Connect to the internet to open your invitation.</Notice>
+        <Notice tone="error">{load.message}</Notice>
         <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
       </LinkPage>
     );

@@ -12,9 +12,12 @@ import { getDeviceId, getStoredSession, saveStoredSession } from "./session.ts";
 import { createStore } from "./store.ts";
 
 export class NetworkFailure extends Error {
-  constructor(message = "No connection to the server.") {
+  /** Set when the server did answer, with a 5xx; absent when nothing came back at all (see `no-answer.ts`). */
+  readonly status: number | undefined;
+  constructor(message = "No connection to the server.", status?: number) {
     super(message);
     this.name = "NetworkFailure";
+    this.status = status;
   }
 }
 
@@ -66,7 +69,7 @@ async function send(method: string, path: string, body?: unknown, token?: string
 }
 
 async function readOrThrow<T>(res: Response): Promise<T> {
-  if (res.status >= 500) throw new NetworkFailure(`The server had a problem (${res.status}).`);
+  if (res.status >= 500) throw new NetworkFailure(`The server had a problem (${res.status}).`, res.status);
   if (res.status === 204) return undefined as T;
   let payload: unknown = null;
   try {
