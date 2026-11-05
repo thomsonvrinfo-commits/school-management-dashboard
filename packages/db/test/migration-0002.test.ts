@@ -68,8 +68,8 @@ test("0002 applies over a database that already holds Slice 1 data, and keeps ev
     await t.runner.query(`insert into students (school_id, admission_no, first_name, last_name) values ($1, 'S1STYLE', 'Old', 'Way')`, [DEV_IDS.school]);
     await t.runner.query(`insert into classes (school_id, name, grade_level) values ($1, 'Grade 3A', '3')`, [DEV_IDS.school]);
     await t.runner.query(`insert into enrollments (school_id, student_id, class_id, starts_on)
-                          select school_id, id, $2, date '2026-02-02' from students where admission_no = 'S1STYLE'`,
-      [DEV_IDS.school, (await t.runner.query<{ id: string }>(`select id from classes where name = 'Grade 3A'`))[0]!.id]);
+                          select school_id, id, $1::uuid, date '2026-02-02' from students where admission_no = 'S1STYLE'`,
+      [(await t.runner.query<{ id: string }>(`select id from classes where name = 'Grade 3A'`))[0]!.id]);
     const old = (await t.runner.query<{ status: string; enrolment_date: string | null }>(`select status, enrolment_date from students where admission_no = 'S1STYLE'`))[0]!;
     assert.equal(old.status, "enrolled");
     assert.ok(old.enrolment_date, "the new NOT NULL column has a default, so old-style inserts still work");

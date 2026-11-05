@@ -535,10 +535,13 @@ export class PostgresAdminStore implements AdminStore {
       where.push(`split_part(a.action, '.', 1) in (${marks.join(", ")})`);
     }
     if (f.actorUserId) where.push(`a.actor_user_id = $${params.push(f.actorUserId)}`);
-    // A school day runs from local midnight to the next local midnight, in the school's own time zone.
-    const tz = `$${params.push(f.timeZone)}`;
-    if (f.fromDate) where.push(`a.at >= ($${params.push(f.fromDate)}::date)::timestamp at time zone ${tz}`);
-    if (f.toDate) where.push(`a.at < ($${params.push(f.toDate)}::date + 1)::timestamp at time zone ${tz}`);
+    // A school day runs from local midnight to the next local midnight, in the school's own time zone. The zone is only
+    // sent when a date filter uses it: PostgreSQL cannot work out the type of a parameter nothing refers to, and the
+    // production driver (unlike the test runner, which pastes values into the text) fails the whole query because of it.
+    let tz: string | null = null;
+    const zone = () => (tz ??= `$${params.push(f.timeZone)}`);
+    if (f.fromDate) where.push(`a.at >= ($${params.push(f.fromDate)}::date)::timestamp at time zone ${zone()}`);
+    if (f.toDate) where.push(`a.at < ($${params.push(f.toDate)}::date + 1)::timestamp at time zone ${zone()}`);
     if (f.before) where.push(`a.id < $${params.push(f.before)}::bigint`);
     const limitP = `$${params.push(limit)}`;
     // `details` is read as text and parsed here so every driver hands back the same thing.
