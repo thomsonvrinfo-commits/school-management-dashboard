@@ -43,7 +43,17 @@ class PsqlSession {
     w(out);
   }
 
+  // Statements on one session run strictly one after another, like postgres.js does inside a transaction. Without this,
+  // two overlapping calls (e.g. a Promise.all inside a transaction) would overwrite each other's reply slot and hang.
+  private tail: Promise<unknown> = Promise.resolve();
+
   run(statement: string): Promise<string> {
+    const next = this.tail.then(() => this.runNow(statement));
+    this.tail = next.catch(() => undefined);
+    return next;
+  }
+
+  private runNow(statement: string): Promise<string> {
     return new Promise((resolve) => {
       this.counter += 1;
       this.marker = `__END_${this.counter}_${randomBytes(4).toString("hex")}__`;
@@ -83,18 +93,36 @@ function inline(text: string, params: readonly SqlParam[]): string {
   });
 }
 
+/**
+ * PSQL_TEST_EXTENDED=1: send each parameterised statement the way the production driver (postgres.js) does, as a
+ * statement with `$n` placeholders whose types the SERVER works out, instead of pasting the values into the text.
+ * Inlining hides a whole family of failures that only exist in production: a parameter nothing refers to, or one whose
+ * type cannot be inferred ("could not determine data type of parameter $2"). PREPARE ... AS <statement> without a type
+ * list is the same type inference as the driver's unnamed prepared statement; EXECUTE then passes every value as an
+ * untyped string literal, as the driver does (it sends text and lets the server cast).
+ */
+const extended = () => process.env.PSQL_TEST_EXTENDED === "1";
+let preparedCount = 0;
+const asText = (p: SqlParam): string => (p === null ? "NULL" : `'${String(p).replace(/'/g, "''")}'`);
+
 function clientFor(session: PsqlSession): SqlClient {
   return {
     async query<T>(text: string, params: readonly SqlParam[] = []): Promise<T[]> {
-      const sql = inline(text, params).trim();
+      const useExtended = extended() && params.length > 0;
+      const sql = (useExtended ? text : inline(text, params)).trim();
       const returnsRows = /^\s*(select|with)\b/i.test(sql) || /\breturning\b/i.test(sql);
+      const statement = returnsRows ? `with __t as (${sql}) select coalesce(jsonb_agg(to_jsonb(__t)), '[]'::jsonb) from __t` : sql;
+      if (useExtended) {
+        const name = `__p${++preparedCount}`;
+        const out = await session.checked(`prepare ${name} as ${statement}; execute ${name}(${params.map(asText).join(", ")})`);
+        if (!returnsRows) return [];
+        return JSON.parse(out.trim().split("\n").pop() ?? "[]") as T[];
+      }
       if (!returnsRows) {
         await session.checked(sql);
         return [];
       }
-      const out = await session.checked(
-        `with __t as (${sql}) select coalesce(jsonb_agg(to_jsonb(__t)), '[]'::jsonb) from __t`,
-      );
+      const out = await session.checked(statement);
       const line = out.trim().split("\n").pop() ?? "[]";
       return JSON.parse(line) as T[];
     },
@@ -176,8 +204,14 @@ export function loadMigrations() {
     .map((name) => ({ name, sql: readFileSync(migrationsDir + name, "utf8") }));
 }
 
-/** Creates a brand-new empty database, applies every migration, and returns handles to it. */
-export async function createTestDatabase(): Promise<TestDatabase> {
+export interface TestDatabaseOptions {
+  /** Apply every migration (default). Pass false to start from an empty database and apply some yourself. */
+  migrate?: boolean;
+}
+
+/** Creates a brand-new empty database, applies every migration (unless told not to), and returns handles to it. */
+export async function createTestDatabase(opts: TestDatabaseOptions = {}): Promise<TestDatabase> {
+  const applyAll = opts.migrate !== false;
   const name = `sp_test_${randomBytes(6).toString("hex")}`;
 
   if (process.env.TEST_DATABASE_URL) {
@@ -186,7 +220,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     const u = new URL(process.env.TEST_DATABASE_URL);
     u.pathname = `/${name}`;
     const conn = await postgresJsRunnerFactory(u.toString());
-    await migrate(conn.runner, loadMigrations());
+    if (applyAll) await migrate(conn.runner, loadMigrations());
     return {
       runner: conn.runner,
       db: createDb(conn.runner),
@@ -203,7 +237,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   const admin = new PsqlRunner(base);
   await admin.exec(`create database ${name}`);
   const runner = new PsqlRunner(`${base} dbname=${name}`);
-  await migrate(runner, loadMigrations());
+  if (applyAll) await migrate(runner, loadMigrations());
   return {
     runner,
     db: createDb(runner),

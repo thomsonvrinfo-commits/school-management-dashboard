@@ -11,6 +11,13 @@ A teacher opens **Today**, takes the **Grade 7A register** with no internet, see
 connection returns it **syncs**. The **head's overview** then shows the updated attendance, with the raw counts behind
 every number.
 
+## What Slice 2 adds (school administration)
+
+The head can set up the school itself: profile, academic years and terms, the **student register** (admit, search, edit, change
+status, place in or move between classes with history kept), **classes and streams**, and **which teacher teaches which class**.
+The teacher's offline register reads exactly this data. Slice 2 is built on its own branch and is not deployed; read
+`docs/SLICE-2-HANDOFF.md` before merging or applying `packages/db/migrations/0002_school_administration.sql`.
+
 Not built yet, on purpose: assessments, homework, finance, communication, interventions, workflows, reports, AI, parent
 and student experiences. See `docs/ARCHITECTURE.md` for how they will slot in.
 
@@ -63,6 +70,7 @@ and save, then go back online.
 npm test                 # domain, contracts, sync: always run. API + database: run when PostgreSQL is configured.
 npm run typecheck
 npm run check:imports    # works without installing anything
+npm run check:render     # needs bun: renders the Slice 1 and school-administration screens to HTML and checks them
 ```
 
 Database and API tests need a PostgreSQL the `psql` command can reach, and a role that can create databases:
@@ -83,3 +91,5 @@ installed, the tests use the production database adapter instead of `psql`.
   `apps/api/wrangler.toml`, set `ALLOWED_ORIGIN` to the Pages URL, `npx wrangler secret put AUTH_SECRET`, then
   `npm run deploy -w @schoolpulse/api`.
 - **Database:** any PostgreSQL 16 reachable from Cloudflare Hyperdrive. Run `npm run db:migrate` against it. Never run the seed.
+  Before applying migration 0002 to a database that already holds data, run
+  `psql "$DATABASE_URL" -f packages/db/preflight/0002_school_administration.sql` (read-only) and fix any `blocking` row.

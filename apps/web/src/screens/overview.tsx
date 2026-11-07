@@ -4,6 +4,7 @@ import { SummaryView } from "../components/summary.tsx";
 import { ApiFailure, NetworkFailure, api } from "../lib/api.ts";
 import { getMeta, setMeta } from "../lib/db.ts";
 import { clock } from "../lib/format.ts";
+import { browserOnline, noAnswerLead } from "../lib/no-answer.ts";
 
 interface Cached {
   fetchedAt: string;
@@ -33,7 +34,12 @@ export function Overview() {
         setFetchedAt(cached.fetchedAt);
       }
       if (e instanceof NetworkFailure) {
-        setNotice(cached ? `You are offline. Showing the figures from ${clock(cached.fetchedAt)}.` : "You are offline and there are no saved figures yet. Connect to the internet to see school attendance.");
+        const online = browserOnline();
+        setNotice(
+          cached
+            ? `${noAnswerLead(e, online)} Showing the figures from ${clock(cached.fetchedAt)}.`
+            : `${noAnswerLead(e, online)} There are no saved figures yet. ${online === false ? "Connect to the internet to see school attendance." : "Try again in a minute."}`,
+        );
       } else if (e instanceof ApiFailure) {
         setNotice(e.message);
       } else {

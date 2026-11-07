@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import { ACTIONS } from "@schoolpulse/domain";
 import { ROUTES } from "../src/routes.ts";
 
-test("only the auth endpoints are public", () => {
+test("only the sign-in endpoints and the three link endpoints are public", () => {
   const pub = ROUTES.filter((r) => r.access === "public").map((r) => `${r.method} ${r.path}`).sort();
-  assert.deepEqual(pub, ["POST /v1/auth/login", "POST /v1/auth/logout", "POST /v1/auth/refresh"]);
+  assert.deepEqual(pub, [
+    "POST /v1/auth/login", "POST /v1/auth/logout", "POST /v1/auth/refresh",
+    "POST /v1/invitations/accept", "POST /v1/invitations/preview", "POST /v1/password-reset/complete",
+  ]);
 });
 
 test("every protected route names a real policy action or is explicitly 'authenticated'", () => {

@@ -56,4 +56,11 @@ export async function hashRefreshToken(token: string): Promise<string> {
   return toB64Url(digest);
 }
 
+/**
+ * Invitation and password-reset links use the same recipe as refresh tokens: 256 random bits, stored only as a SHA-256.
+ * Named separately so the call sites say what they mean.
+ */
+export const newOpaqueToken = newRefreshToken;
+export const hashOpaqueToken = hashRefreshToken;
+
 export { constantTimeEqual };

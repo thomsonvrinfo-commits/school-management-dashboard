@@ -7,11 +7,12 @@
  */
 import type { OpResult } from "@schoolpulse/contracts";
 import {
-  applyConfirmed, applyResults, discard, dueOps, markNetworkFailure, markSending, mergeServerRow, rebase,
-  recoverInterrupted, resolveKeepTheirs, resolveUseMine, type QueuedOp,
+  afterRun, applyConfirmed, applyResults, discard, dueOps, freshPollState, markNetworkFailure, markSending, mergeServerRow, nextPollDelayMs,
+  rebase, recoverInterrupted, replicaMetaAfter, resolveKeepTheirs, resolveUseMine, sinceFor, type PollState, type QueuedOp, type ReplicaMeta,
+  type RunOutcome,
 } from "@schoolpulse/sync";
 import { ApiFailure, NetworkFailure, api } from "./api.ts";
-import { db, fromOpRow, setMeta, toDbRow, toLocal, toOpRow } from "./db.ts";
+import { db, fromOpRow, getMeta, setMeta, toDbRow, toLocal, toOpRow } from "./db.ts";
 import { getDeviceId } from "./session.ts";
 import { createStore } from "./store.ts";
 
@@ -49,6 +50,12 @@ let first = true;
 let running: Promise<void> | null = null;
 let again = false;
 
+// How soon to ask again depends on how the last runs went (see @schoolpulse/sync polling.ts). Kept here, in memory:
+// after a restart the app simply starts at the fastest pace again.
+let poll: PollState = freshPollState;
+let pending = false;
+let onRunFinished: (() => void) | null = null;
+
 /** Push whatever is waiting, then refresh the local copy. Safe to call at any time and as often as you like. */
 export function syncNow(): Promise<void> {
   if (running) {
@@ -61,6 +68,7 @@ export function syncNow(): Promise<void> {
       again = false;
       void syncNow();
     }
+    onRunFinished?.();
   });
   return running;
 }
@@ -71,6 +79,7 @@ function rejectAll(ops: readonly QueuedOp[], reason: "forbidden" | "invalid"): O
 
 async function run(): Promise<void> {
   patch({ syncing: true });
+  let sentSomething = false;
   try {
     let queue = await loadQueue();
     if (first) {
@@ -82,6 +91,7 @@ async function run(): Promise<void> {
 
     const due = dueOps(queue, Date.now());
     if (due.length > 0) {
+      sentSomething = true;
       const ids = new Set(due.map((q) => q.op.opId));
       const sending = markSending(queue, ids);
       await persistQueueChange(queue, sending);
@@ -99,18 +109,32 @@ async function run(): Promise<void> {
           const retry = markNetworkFailure(queue, ids, Date.now(), msg, Math.random());
           await persistQueueChange(queue, retry);
           if (e instanceof NetworkFailure) patch({ reachable: false });
+          poll = afterRun(poll, "failed", false);
           return;
         }
       }
     }
 
-    await refreshReplica();
+    // After sending registers, always download in full: whatever the server now holds is what this phone should show.
+    const outcome: RunOutcome = await refreshReplica({ forceFull: sentSomething });
+    poll = afterRun(poll, outcome, sentSomething);
     patch({ reachable: true, lastSyncedAt: new Date().toISOString() });
   } catch (e) {
+    poll = afterRun(poll, "failed", false);
     if (e instanceof NetworkFailure) patch({ reachable: false });
     else if (!(e instanceof ApiFailure)) console.error("Sync failed", e);
   } finally {
+    pending = await hasPendingOps();
     patch({ syncing: false });
+  }
+}
+
+/** Registers waiting to go to the server (not ones waiting for a person to settle a conflict or a refusal). */
+async function hasPendingOps(): Promise<boolean> {
+  try {
+    return (await loadQueue()).some((q) => q.status === "pending" || q.status === "sending");
+  } catch {
+    return false;
   }
 }
 
@@ -125,9 +149,25 @@ async function absorbResults(queueBefore: readonly QueuedOp[], results: readonly
   });
 }
 
-/** Download the teacher's classes, students, timetable and recent attendance. Unsynced local marks are never overwritten. */
-export async function refreshReplica(): Promise<void> {
-  const b = await api.bootstrap();
+/**
+ * Download the teacher's classes, students, timetable and recent attendance. Unsynced local marks are never overwritten.
+ * When this phone already holds a recent copy the server is asked "has anything changed?" and, if not, sends a few dozen
+ * bytes instead of the lot. `forceFull` skips that question.
+ */
+export async function refreshReplica(opts: { forceFull?: boolean } = {}): Promise<"changed" | "unchanged"> {
+  const held = await getMeta<ReplicaMeta>("replica");
+  const b = await api.bootstrap(sinceFor(held, Date.now(), opts));
+  const meta = replicaMetaAfter(held, b, new Date().toISOString());
+  if (!meta) {
+    // "unchanged" about a copy we do not hold: never happens, but never trust it. Ask once for everything; if even that is
+    // answered "unchanged" the server is broken, so stop (the engine retries later with a back-off) instead of looping.
+    if (opts.forceFull) throw new Error("The server answered 'unchanged' to a request for the whole copy.");
+    return refreshReplica({ forceFull: true });
+  }
+  if ("unchanged" in b) {
+    await setMeta("replica", meta);
+    return "unchanged";
+  }
   await db.transaction("rw", [db.meta, db.classes, db.students, db.slots, db.attendance], async () => {
     await Promise.all([db.classes.clear(), db.students.clear(), db.slots.clear()]);
     await db.classes.bulkPut(b.classes);
@@ -139,8 +179,21 @@ export async function refreshReplica(): Promise<void> {
       const merged = mergeServerRow(local ? toLocal(local) : undefined, row);
       if (!local || !local.dirty) await db.attendance.put(toDbRow(merged));
     }
-    await setMeta("replica", { today: b.today, school: b.school, serverTime: b.serverTime });
+    await setMeta("replica", meta);
   });
+  return "changed";
+}
+
+/**
+ * Forget which copy this phone holds, so the next refresh downloads in full. For anything that changes the local
+ * attendance in a way the server's copy does not know about (the server would otherwise say "unchanged").
+ */
+async function forgetReplicaVersion(): Promise<void> {
+  const held = await getMeta<ReplicaMeta>("replica");
+  if (held?.version) {
+    const { version: _gone, ...rest } = held;
+    await setMeta("replica", rest);
+  }
 }
 
 // ---------- resolving problems the teacher has seen ----------
@@ -184,6 +237,8 @@ export async function discardFailed(opId: string): Promise<void> {
     }
     await persistQueueChange(queue, next);
   });
+  // The rows just removed may exist on the server: the next refresh must bring them back, not say "unchanged".
+  await forgetReplicaVersion();
   void syncNow();
 }
 
@@ -193,24 +248,48 @@ let started = false;
 export function startSyncEngine(): () => void {
   if (started) return () => {};
   started = true;
+  let timer: number | undefined;
+
+  // One timer, set again after EVERY sync (from the timer, an event or a saved register), so the pace always
+  // reflects what just happened: quick after something changed or is waiting, slower while everything is quiet.
+  const schedule = () => {
+    window.clearTimeout(timer);
+    timer = undefined;
+    const delay = nextPollDelayMs(
+      { ...poll, visible: document.visibilityState === "visible", online: navigator.onLine, pending },
+      Math.random(),
+    );
+    if (delay !== null) timer = window.setTimeout(() => void syncNow(), delay);
+  };
+  onRunFinished = schedule;
+
   const onOnline = () => {
     patch({ online: true });
+    poll = { ...poll, failures: 0 };
     void syncNow();
   };
-  const onOffline = () => patch({ online: false });
+  const onOffline = () => {
+    patch({ online: false });
+    schedule();
+  };
   const onVisible = () => {
-    if (document.visibilityState === "visible") void syncNow();
+    if (document.visibilityState === "visible") {
+      poll = freshPollState; // she is back: check now, then at the quick pace again
+      void syncNow();
+    } else {
+      schedule();
+    }
   };
   window.addEventListener("online", onOnline);
   window.addEventListener("offline", onOffline);
   document.addEventListener("visibilitychange", onVisible);
-  const timer = window.setInterval(() => void syncNow(), 30_000);
   void syncNow();
   return () => {
     started = false;
+    onRunFinished = null;
     window.removeEventListener("online", onOnline);
     window.removeEventListener("offline", onOffline);
     document.removeEventListener("visibilitychange", onVisible);
-    window.clearInterval(timer);
+    window.clearTimeout(timer);
   };
 }

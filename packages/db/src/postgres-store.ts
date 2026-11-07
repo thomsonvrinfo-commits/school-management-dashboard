@@ -96,12 +96,15 @@ export class PostgresStore implements Store {
   }
 
   // ---------- teaching ----------
+  // Slice 2: an ARCHIVED class (migration 0002 `classes.status`) no longer appears on a teacher's phone (class list and
+  // today's timetable). `teachesClass` is deliberately NOT filtered: attendance a teacher recorded offline for a class
+  // that was archived in the meantime must still sync, never be thrown away.
 
   async teacherClasses(schoolId: string, userId: string): Promise<ClassRow[]> {
     return this.db.query<ClassRow>(
       `select c.id, c.name, c.grade_level as "gradeLevel"
          from classes c join class_teachers ct on ct.school_id = c.school_id and ct.class_id = c.id
-        where c.school_id = $1 and ct.user_id = $2 order by c.name`,
+        where c.school_id = $1 and ct.user_id = $2 and c.status = 'active' order by c.name, c.id`,
       [schoolId, userId],
     );
   }
@@ -119,7 +122,7 @@ export class PostgresStore implements Store {
     return rows.length > 0;
   }
 
-  async enrolledStudents(schoolId: string, classIds: readonly string[], onDate: string): Promise<StudentRow[]> {
+  async enrolledStudents(schoolId: string, classIds: readonly string[], onDate: string, opts: { lock?: boolean } = {}): Promise<StudentRow[]> {
     if (classIds.length === 0) return [];
     return this.db.query<StudentRow>(
       `select s.id, e.class_id as "classId", s.admission_no as "admissionNo",
@@ -127,7 +130,7 @@ export class PostgresStore implements Store {
          from enrollments e join students s on s.school_id = e.school_id and s.id = e.student_id
         where e.school_id = $1 and e.class_id = any($2::uuid[]) and s.active
           and e.starts_on <= $3::date and (e.ends_on is null or e.ends_on >= $3::date)
-        order by s.last_name, s.first_name`,
+        order by s.last_name, s.first_name, s.id${opts.lock ? "\n          for share of e" : ""}`,
       [schoolId, uuidArray(classIds), onDate],
     );
   }
@@ -137,8 +140,8 @@ export class PostgresStore implements Store {
       `select t.id, t.class_id as "classId", c.name as "className", t.subject,
               to_char(t.starts_at, 'HH24:MI') as "startsAt", to_char(t.ends_at, 'HH24:MI') as "endsAt"
          from timetable_slots t join classes c on c.school_id = t.school_id and c.id = t.class_id
-        where t.school_id = $1 and t.teacher_user_id = $2 and t.weekday = $3
-        order by t.starts_at`,
+        where t.school_id = $1 and t.teacher_user_id = $2 and t.weekday = $3 and c.status = 'active'
+        order by t.starts_at, t.id`,
       [schoolId, userId, weekday],
     );
   }

@@ -56,3 +56,68 @@ test("roleMayAttempt is a coarse role gate only", () => {
   assert.equal(roleMayAttempt(teacher, "attendance:summary"), false);
   assert.equal(roleMayAttempt(head, "attendance:summary"), true);
 });
+
+// ---------- Slice 2: school administration ----------
+
+const ADMIN_ONLY = [
+  "school:read", "school:manage", "student:read", "student:manage", "class:read", "class:manage", "teacher:read", "teacher:assign",
+] as const;
+
+test("school administration actions belong to the head and to nobody else", () => {
+  for (const action of ADMIN_ONLY) {
+    assert.equal(authorize(head, action, { schoolId: S1 }).allowed, true, `head ${action}`);
+    assert.deepEqual(authorize(teacher, action, { schoolId: S1 }), { allowed: false, reason: "role_not_permitted" }, `teacher ${action}`);
+    // a teacher who teaches the class still gets nothing extra
+    assert.equal(authorize(teacher, action, { schoolId: S1, classId: "c", teachesClass: true }).allowed, false, `teacher+assigned ${action}`);
+  }
+});
+
+test("a class roster is readable by the head, and by a teacher only for a class they teach", () => {
+  assert.equal(authorize(head, "class:read-roster", { schoolId: S1, classId: "c" }).allowed, true);
+  assert.equal(authorize(teacher, "class:read-roster", { schoolId: S1, classId: "c", teachesClass: true }).allowed, true);
+  assert.deepEqual(authorize(teacher, "class:read-roster", { schoolId: S1, classId: "c", teachesClass: false }), { allowed: false, reason: "not_assigned_to_class" });
+  assert.equal(authorize(teacher, "class:read-roster", { schoolId: S1, classId: "c" }).allowed, false, "a missing fact is a denial");
+});
+
+test("'my classes' is a teacher action: the head has no classes of their own to list", () => {
+  assert.equal(authorize(teacher, "teaching:own-classes", { schoolId: S1 }).allowed, true);
+  assert.deepEqual(authorize(head, "teaching:own-classes", { schoolId: S1 }), { allowed: false, reason: "role_not_permitted" });
+});
+
+test("roleMayAttempt agrees with the matrix for the new actions", () => {
+  for (const action of ADMIN_ONLY) {
+    assert.equal(roleMayAttempt(head, action), true, action);
+    assert.equal(roleMayAttempt(teacher, action), false, action);
+  }
+  assert.equal(roleMayAttempt(teacher, "class:read-roster"), true);
+  assert.equal(roleMayAttempt(teacher, "teaching:own-classes"), true);
+  assert.equal(roleMayAttempt(head, "teaching:own-classes"), false);
+});
+
+test("every Slice 1 action keeps exactly the answer it had before Slice 2", () => {
+  const at = (p: Principal, a: string, r: object = {}) => authorize(p, a, { schoolId: S1, ...r }).allowed;
+  assert.equal(at(teacher, "sync:bootstrap"), true);
+  assert.equal(at(head, "sync:bootstrap"), false);
+  assert.equal(at(teacher, "attendance:record", { teachesClass: true }), true);
+  assert.equal(at(head, "attendance:record", { teachesClass: true }), false);
+  assert.equal(at(head, "attendance:read-class"), true);
+  assert.equal(at(teacher, "attendance:read-class", { teachesClass: true }), true);
+  assert.equal(at(teacher, "attendance:read-class", { teachesClass: false }), false);
+  assert.equal(at(head, "attendance:summary"), true);
+  assert.equal(at(teacher, "attendance:summary"), false);
+});
+
+// ---------- P1: staff accounts ----------
+
+test("only the head may read or manage staff accounts, or read the activity log", () => {
+  for (const action of ["staff:read", "staff:manage", "audit:read"] as const) {
+    assert.equal(authorize(head, action, { schoolId: S1 }).allowed, true, `head ${action}`);
+    assert.deepEqual(authorize(teacher, action, { schoolId: S1 }), { allowed: false, reason: "role_not_permitted" }, `teacher ${action}`);
+    assert.equal(roleMayAttempt(teacher, action), false);
+    assert.equal(roleMayAttempt(head, action), true);
+  }
+});
+
+test("the activity log is closed to another school's head too", () => {
+  assert.deepEqual(authorize(head, "audit:read", { schoolId: "00000000-0000-4000-8000-000000000002" }), { allowed: false, reason: "wrong_school" });
+});

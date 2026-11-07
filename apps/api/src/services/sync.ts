@@ -1,15 +1,20 @@
-import type { AttendanceRecordOp, BootstrapResponse, EntryResult, OpResult, PushRequest, PushResponse, RejectionReason } from "@schoolpulse/contracts";
+import type { AttendanceRecordOp, BootstrapResponse, BootstrapUnchanged, EntryResult, OpResult, PushRequest, PushResponse, RejectionReason } from "@schoolpulse/contracts";
 import { opResult } from "@schoolpulse/contracts";
 import type { Store } from "@schoolpulse/db";
 import { addDays, authorize, decideAttendanceWrite, roleMayAttempt, todayInTimezone, weekdayOf } from "@schoolpulse/domain";
 import type { Deps } from "../deps.ts";
 import { HttpError } from "../errors.ts";
 import type { AuthContext } from "./auth.ts";
+import { replicaVersion } from "./replica-version.ts";
 
 const REPLICA_DAYS = 14;
 
-/** The permission-filtered copy of the data a teacher's phone works from. */
-export async function bootstrap(deps: Deps, auth: AuthContext): Promise<BootstrapResponse> {
+/**
+ * The permission-filtered copy of the data a teacher's phone works from.
+ * `since` is the `version` of the copy the phone already holds: when it is still current the answer is just
+ * "unchanged" (plus the clock and school day, which the phone always needs), not the whole copy again.
+ */
+export async function bootstrapSince(deps: Deps, auth: AuthContext, since?: string): Promise<BootstrapResponse | BootstrapUnchanged> {
   const { principal, ctx } = auth;
   const decision = authorize(principal, "sync:bootstrap", { schoolId: ctx.school.id });
   if (!decision.allowed) throw new HttpError(403, "forbidden", "Your role cannot use the offline register.");
@@ -24,8 +29,7 @@ export async function bootstrap(deps: Deps, auth: AuthContext): Promise<Bootstra
     store.timetableForTeacher(ctx.school.id, ctx.user.id, weekdayOf(today)),
     store.attendanceInRange(ctx.school.id, classIds, addDays(today, -REPLICA_DAYS), today),
   ]);
-  return {
-    serverTime: now.toISOString(),
+  const replica = {
     today,
     school: ctx.school,
     classes,
@@ -33,6 +37,17 @@ export async function bootstrap(deps: Deps, auth: AuthContext): Promise<Bootstra
     todaySlots,
     attendance: attendance.map(({ studentId, classId, date, status, version }) => ({ studentId, classId, date, status, version })),
   };
+  const version = await replicaVersion(ctx.user.id, replica);
+  const serverTime = now.toISOString();
+  if (since !== undefined && since === version) return { unchanged: true, version, serverTime, today };
+  return { version, serverTime, ...replica };
+}
+
+/** The whole copy, always (what Slice 1 clients and the tests use). */
+export async function bootstrap(deps: Deps, auth: AuthContext): Promise<BootstrapResponse> {
+  const r = await bootstrapSince(deps, auth);
+  if ("unchanged" in r) throw new Error("A full bootstrap was asked for but the server answered 'unchanged'");
+  return r;
 }
 
 export async function push(deps: Deps, auth: AuthContext, req: PushRequest): Promise<PushResponse> {
@@ -80,7 +95,8 @@ async function applyAttendance(deps: Deps, tx: Store, auth: AuthContext, deviceI
 
   const ids = entries.map((e) => e.studentId);
   if (new Set(ids).size !== ids.length) return rejected(op.opId, "invalid");
-  const enrolled = new Set((await tx.enrolledStudents(schoolId, [classId], date)).map((s) => s.id));
+  // Locked: a placement being changed by an administrator right now either finishes first (and this check sees it) or waits for this commit.
+  const enrolled = new Set((await tx.enrolledStudents(schoolId, [classId], date, { lock: true })).map((s) => s.id));
   if (ids.some((id) => !enrolled.has(id))) return rejected(op.opId, "invalid");
 
   const stored = new Map((await tx.lockAttendance(schoolId, ids, date)).map((r) => [r.studentId, r]));
