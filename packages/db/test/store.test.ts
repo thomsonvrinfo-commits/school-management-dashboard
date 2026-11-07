@@ -17,8 +17,11 @@ after(async () => {
 });
 
 test("migrations create the schema and are recorded", { skip }, async () => {
-  const rows = await t.runner.query<{ name: string }>("select name from schema_migrations");
-  assert.deepEqual(rows.map((r) => r.name), ["0001_init.sql"]);
+  const rows = await t.runner.query<{ name: string }>("select name from schema_migrations order by name");
+  const { loadMigrations } = await import("../testing/pg-test-runner.ts");
+  // Every migration file in the folder, in order, and nothing else: a new migration needs no edit here.
+  assert.deepEqual(rows.map((r) => r.name), loadMigrations().map((m) => m.name).sort());
+  assert.ok(rows.length >= 3 && rows[0]!.name === "0001_init.sql");
 });
 
 test("re-running migrate applies nothing", { skip }, async () => {

@@ -5,26 +5,33 @@
  *  - ApiFailure: the server answered and said no. The reason is in `code`.
  */
 import type {
-  AttendanceSummaryResponse, BootstrapResponse, LoginRequest, PushRequest, PushResponse, TokenResponse,
+  AcceptInvitationRequest, AttendanceSummaryResponse, BootstrapResponse, BootstrapUnchanged, CompletePasswordResetRequest, InvitationPreview, LoginRequest, PushRequest,
+  PushResponse, TokenResponse,
 } from "@schoolpulse/contracts";
 import { getDeviceId, getStoredSession, saveStoredSession } from "./session.ts";
 import { createStore } from "./store.ts";
 
 export class NetworkFailure extends Error {
-  constructor(message = "No connection to the server.") {
+  /** Set when the server did answer, with a 5xx; absent when nothing came back at all (see `no-answer.ts`). */
+  readonly status: number | undefined;
+  constructor(message = "No connection to the server.", status?: number) {
     super(message);
     this.name = "NetworkFailure";
+    this.status = status;
   }
 }
 
 export class ApiFailure extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  /** The request field the server says the problem is about (school administration errors name one). */
+  readonly field: string | undefined;
+  constructor(status: number, code: string, message: string, field?: string) {
     super(message);
     this.name = "ApiFailure";
     this.status = status;
     this.code = code;
+    this.field = field;
   }
 }
 
@@ -62,7 +69,7 @@ async function send(method: string, path: string, body?: unknown, token?: string
 }
 
 async function readOrThrow<T>(res: Response): Promise<T> {
-  if (res.status >= 500) throw new NetworkFailure(`The server had a problem (${res.status}).`);
+  if (res.status >= 500) throw new NetworkFailure(`The server had a problem (${res.status}).`, res.status);
   if (res.status === 204) return undefined as T;
   let payload: unknown = null;
   try {
@@ -71,8 +78,8 @@ async function readOrThrow<T>(res: Response): Promise<T> {
     /* fall through */
   }
   if (!res.ok) {
-    const err = (payload as { error?: { code?: string; message?: string } } | null)?.error;
-    throw new ApiFailure(res.status, err?.code ?? "unknown", err?.message ?? "The request was refused.");
+    const err = (payload as { error?: { code?: string; message?: string; field?: string } } | null)?.error;
+    throw new ApiFailure(res.status, err?.code ?? "unknown", err?.message ?? "The request was refused.", err?.field);
   }
   return payload as T;
 }
@@ -106,7 +113,8 @@ async function ensureAccess(): Promise<string> {
   return access!.token;
 }
 
-async function authed<T>(method: string, path: string, body?: unknown): Promise<T> {
+/** An authenticated request with token refresh and one retry. Slice 2 screens use this through lib/admin-api.ts. */
+export async function authed<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res = await send(method, path, body, await ensureAccess());
   if (res.status === 401) {
     access = null; // the token was refused (revoked or clock skew): get a fresh one once
@@ -119,10 +127,22 @@ export const api = {
   async login(req: LoginRequest): Promise<TokenResponse> {
     return readOrThrow<TokenResponse>(await send("POST", "/v1/auth/login", req));
   },
+  // Invitation and reset links: used by someone who is not signed in, so no token is sent.
+  async previewInvitation(token: string): Promise<InvitationPreview> {
+    return readOrThrow<InvitationPreview>(await send("POST", "/v1/invitations/preview", { token }));
+  },
+  async acceptInvitation(req: AcceptInvitationRequest): Promise<TokenResponse> {
+    return readOrThrow<TokenResponse>(await send("POST", "/v1/invitations/accept", req));
+  },
+  async completePasswordReset(req: CompletePasswordResetRequest): Promise<void> {
+    await readOrThrow<void>(await send("POST", "/v1/password-reset/complete", req));
+  },
   async logout(refreshToken: string): Promise<void> {
     await readOrThrow<void>(await send("POST", "/v1/auth/logout", { refreshToken }));
   },
-  bootstrap: () => authed<BootstrapResponse>("GET", "/v1/sync/bootstrap"),
+  /** With `since` (the version already held) the server may answer "unchanged" instead of sending everything again. */
+  bootstrap: (since?: string) =>
+    authed<BootstrapResponse | BootstrapUnchanged>("GET", `/v1/sync/bootstrap${since ? `?since=${encodeURIComponent(since)}` : ""}`),
   push: (req: PushRequest) => authed<PushResponse>("POST", "/v1/sync/push", req),
   attendanceSummary: (query: { from?: string; to?: string } = {}) => {
     const qs = new URLSearchParams(Object.entries(query).filter(([, v]) => v) as [string, string][]).toString();

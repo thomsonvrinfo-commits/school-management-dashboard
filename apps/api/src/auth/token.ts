@@ -13,7 +13,7 @@ export interface AccessClaims {
   exp: number;
 }
 
-async function hmacKey(secret: string, usage: "sign" | "verify"): Promise<CryptoKey> {
+async function hmacKey(secret: string, usage: "sign" | "verify") {
   if (secret.length < 32) throw new Error("AUTH_SECRET must be at least 32 characters");
   return crypto.subtle.importKey("raw", utf8(secret), { name: "HMAC", hash: "SHA-256" }, false, [usage]);
 }
@@ -55,5 +55,12 @@ export async function hashRefreshToken(token: string): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", utf8(token)));
   return toB64Url(digest);
 }
+
+/**
+ * Invitation and password-reset links use the same recipe as refresh tokens: 256 random bits, stored only as a SHA-256.
+ * Named separately so the call sites say what they mean.
+ */
+export const newOpaqueToken = newRefreshToken;
+export const hashOpaqueToken = hashRefreshToken;
 
 export { constantTimeEqual };

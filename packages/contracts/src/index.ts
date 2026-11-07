@@ -3,16 +3,17 @@
  * The server validates every request with these; the client uses the inferred types.
  */
 import { z } from "zod";
-import { ATTENDANCE_STATUSES, ROLES, isIsoDate } from "@schoolpulse/domain";
+import { ATTENDANCE_STATUSES } from "@schoolpulse/domain";
+import { deviceId, isoDate, meResponse, role, tokenResponse, uuid } from "./primitives.ts";
+import type { MeResponse, TokenResponse } from "./primitives.ts";
 
-export const uuid = z.string().uuid();
-export const isoDate = z.string().refine(isIsoDate, "Expected a real calendar date as YYYY-MM-DD");
+// Moved to primitives.ts (Slice 2, and again in P1) so admin.ts and staff.ts can share them without an import cycle.
+// Same names, same exports.
+export { deviceId, isoDate, meResponse, role, tokenResponse, uuid };
+export type { MeResponse, TokenResponse };
 export const attendanceStatus = z.enum(ATTENDANCE_STATUSES);
-export const role = z.enum(ROLES);
 
 // ---------- auth ----------
-
-export const deviceId = z.string().min(8).max(64).regex(/^[A-Za-z0-9_-]+$/);
 
 export const loginRequest = z.object({
   email: z.string().email().max(254),
@@ -30,21 +31,6 @@ export const refreshRequest = z.object({
 export type RefreshRequest = z.infer<typeof refreshRequest>;
 
 export const logoutRequest = z.object({ refreshToken: z.string().min(20).max(200) });
-
-export const meResponse = z.object({
-  user: z.object({ id: uuid, name: z.string(), email: z.string() }),
-  school: z.object({ id: uuid, name: z.string(), timezone: z.string() }),
-  role,
-});
-export type MeResponse = z.infer<typeof meResponse>;
-
-export const tokenResponse = z.object({
-  accessToken: z.string(),
-  accessTokenExpiresAt: z.string(),
-  refreshToken: z.string(),
-  me: meResponse,
-});
-export type TokenResponse = z.infer<typeof tokenResponse>;
 
 // ---------- sync: operations pushed from a device ----------
 
@@ -108,6 +94,11 @@ export type PushResponse = z.infer<typeof pushResponse>;
 // ---------- sync: replica a device downloads ----------
 
 export const bootstrapResponse = z.object({
+  /**
+   * A fingerprint of everything below except `serverTime`. A phone sends it back as `since`; if nothing changed the server
+   * answers with `bootstrapUnchanged` (a few dozen bytes) instead of the whole replica. Opaque: only ever compared for equality.
+   */
+  version: z.string(),
   serverTime: z.string(),
   today: isoDate,
   school: z.object({ id: uuid, name: z.string(), timezone: z.string() }),
@@ -143,6 +134,14 @@ export const bootstrapResponse = z.object({
 });
 export type BootstrapResponse = z.infer<typeof bootstrapResponse>;
 
+/** `?since=` on the bootstrap request: the `version` of the replica this phone already holds. */
+export const bootstrapQuery = z.object({ since: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/, "Not a valid version").optional() });
+export type BootstrapQuery = z.input<typeof bootstrapQuery>;
+
+/** The answer when the phone's replica is still current: nothing to download. */
+export const bootstrapUnchanged = z.object({ unchanged: z.literal(true), version: z.string(), serverTime: z.string(), today: isoDate });
+export type BootstrapUnchanged = z.infer<typeof bootstrapUnchanged>;
+
 // ---------- admin: attendance summary ----------
 
 export const summaryQuery = z.object({ from: isoDate.optional(), to: isoDate.optional() });
@@ -175,5 +174,15 @@ export const attendanceSummaryResponse = z.object({
 });
 export type AttendanceSummaryResponse = z.infer<typeof attendanceSummaryResponse>;
 
-export const apiError = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
+/** `field` (Slice 2) names the input a validation or conflict error is about; older clients simply ignore it. */
+export const apiError = z.object({ error: z.object({ code: z.string(), message: z.string(), field: z.string().optional() }) });
 export type ApiError = z.infer<typeof apiError>;
+
+// ---------- Slice 2: school administration ----------
+export * from "./admin.ts";
+
+// ---------- P1: staff onboarding ----------
+export * from "./staff.ts";
+
+// ---------- P1: activity screen ----------
+export * from "./audit.ts";

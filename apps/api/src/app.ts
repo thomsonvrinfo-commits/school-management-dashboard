@@ -12,14 +12,23 @@ import type { Deps } from "./deps.ts";
 import { HttpError } from "./errors.ts";
 import { ROUTES } from "./routes.ts";
 import { authenticate, login, logout, meOf, refresh, type AuthContext } from "./services/auth.ts";
-import { bootstrap, push } from "./services/sync.ts";
+import { push } from "./services/sync.ts";
 import { attendanceSummary } from "./services/admin.ts";
+import { SCHOOL_ADMIN_HANDLERS } from "./school-admin/handlers.ts";
+import type { AdminHandler, PublicHandler } from "./school-admin/http.ts";
+import { PUBLIC_STAFF_HANDLERS, STAFF_HANDLERS } from "./staff/handlers.ts";
+import { AUDIT_HANDLERS } from "./audit/handlers.ts";
+import { SYNC_HANDLERS } from "./sync/handlers.ts";
+import { checkRate, type RateLimiter } from "./security/rate-limit.ts";
+import { API_SECURITY_HEADERS } from "./security/headers.ts";
 
 export interface Env {
   HYPERDRIVE: { connectionString: string };
   AUTH_SECRET: string;
   ENVIRONMENT?: string;
   ALLOWED_ORIGIN?: string;
+  /** Optional Cloudflare rate-limit binding for the endpoints that take a secret from a stranger (see security/rate-limit.ts). */
+  AUTH_RATE_LIMIT?: RateLimiter;
 }
 
 interface Vars {
@@ -49,7 +58,28 @@ async function readBody<T>(c: Ctx, schema: ZodType<T>): Promise<T> {
 
 type Handler = (c: Ctx) => Promise<Response>;
 
+/**
+ * Slice 2 endpoints are framework-free functions (see school-admin/http.ts). This is the whole of their Hono wiring:
+ * hand over the caller and a small request view, send back the status and JSON they return.
+ */
+const adapt = (h: AdminHandler): Handler => async (c) => {
+  const res = await h(c.get("deps"), c.get("auth"), { params: c.req.param(), query: c.req.query(), json: () => c.req.json() });
+  // 204 is the only status without a body; the casts keep Hono's contentful/contentless status types happy.
+  return res.body === undefined ? c.body(null, res.status as 204) : c.json(res.body, res.status as 200 | 201);
+};
+
+/** The same, for endpoints with no signed-in caller (invitation and reset links). They are handed no `auth` at all. */
+const adaptPublic = (h: PublicHandler): Handler => async (c) => {
+  const res = await h(c.get("deps"), { params: c.req.param(), query: c.req.query(), json: () => c.req.json() });
+  return res.body === undefined ? c.body(null, res.status as 204) : c.json(res.body, res.status as 200 | 201);
+};
+
 const handlers: Record<string, Handler> = {
+  ...Object.fromEntries(Object.entries(SCHOOL_ADMIN_HANDLERS).map(([key, h]) => [key, adapt(h)])),
+  ...Object.fromEntries(Object.entries(STAFF_HANDLERS).map(([key, h]) => [key, adapt(h)])),
+  ...Object.fromEntries(Object.entries(AUDIT_HANDLERS).map(([key, h]) => [key, adapt(h)])),
+  ...Object.fromEntries(Object.entries(SYNC_HANDLERS).map(([key, h]) => [key, adapt(h)])),
+  ...Object.fromEntries(Object.entries(PUBLIC_STAFF_HANDLERS).map(([key, h]) => [key, adaptPublic(h)])),
   "POST /v1/auth/login": async (c) => c.json(await login(c.get("deps"), await readBody(c, loginRequest))),
   "POST /v1/auth/refresh": async (c) => c.json(await refresh(c.get("deps"), await readBody(c, refreshRequest))),
   "POST /v1/auth/logout": async (c) => {
@@ -57,7 +87,6 @@ const handlers: Record<string, Handler> = {
     return c.body(null, 204);
   },
   "GET /v1/me": async (c) => c.json(meOf(c.get("auth").ctx)),
-  "GET /v1/sync/bootstrap": async (c) => c.json(await bootstrap(c.get("deps"), c.get("auth"))),
   "POST /v1/sync/push": async (c) => c.json(await push(c.get("deps"), c.get("auth"), await readBody(c, pushRequest))),
   "GET /v1/admin/attendance/summary": async (c) => {
     const q = summaryQuery.safeParse(c.req.query());
@@ -71,14 +100,19 @@ export function createApp(makeDeps: DepsFactory) {
 
   app.use("*", cors({
     origin: (origin, c) => (origin && origin === c.env.ALLOWED_ORIGIN ? origin : undefined),
-    allowMethods: ["GET", "POST", "OPTIONS"],
+    // Derived from the route table so a new verb in routes.ts can never be blocked by a forgotten CORS list.
+    allowMethods: [...new Set([...ROUTES.map((r) => r.method), "OPTIONS"])],
     allowHeaders: ["authorization", "content-type"],
     maxAge: 600,
   }));
   app.use("*", async (c, next) => {
     await next();
-    c.header("X-Content-Type-Options", "nosniff");
-    c.header("Cache-Control", "no-store");
+    for (const [name, value] of Object.entries(API_SECURITY_HEADERS)) c.header(name, value);
+  });
+  // Before the body is read or a database connection is used: a refused guess costs almost nothing.
+  app.use("*", async (c, next) => {
+    await checkRate(c.env.AUTH_RATE_LIMIT, { method: c.req.method, path: c.req.path, address: c.req.header("cf-connecting-ip") }, ROUTES);
+    await next();
   });
   app.use("*", bodyLimit({
     maxSize: 512 * 1024,
@@ -112,7 +146,11 @@ export function createApp(makeDeps: DepsFactory) {
   app.notFound((c) => c.json({ error: { code: "not_found", message: "No such endpoint." } }, 404));
   app.onError((err, c) => {
     if (err instanceof HttpError) {
-      return c.json({ error: { code: err.code, message: err.message } }, err.status as 400 | 401 | 403 | 404 | 409);
+      if (err.status === 429) c.header("Retry-After", "60");
+      return c.json(
+        { error: { code: err.code, message: err.message, ...(err.field ? { field: err.field } : {}) } },
+        err.status as 400 | 401 | 403 | 404 | 409 | 429,
+      );
     }
     console.error("Unhandled error", err);
     return c.json({ error: { code: "internal_error", message: "Something went wrong. Please try again." } }, 500);

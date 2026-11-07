@@ -5,6 +5,7 @@ import { Navigate, useNavigate } from "react-router";
 import { loginRequest } from "@schoolpulse/contracts";
 import { ApiFailure, NetworkFailure, sessionExpired } from "../lib/api.ts";
 import { authStore, signIn } from "../lib/auth.ts";
+import { browserOnline, explainNoAnswer } from "../lib/no-answer.ts";
 import { useStore } from "../lib/hooks.ts";
 import { homeFor } from "../components/shell.tsx";
 import type { z } from "zod";
@@ -28,7 +29,7 @@ export function Login() {
       const next = authStore.get();
       navigate(next.status === "signedIn" ? homeFor(next.me.role) : "/", { replace: true });
     } catch (e) {
-      if (e instanceof NetworkFailure) setError("You are offline. Connect to the internet to sign in.");
+      if (e instanceof NetworkFailure) setError(explainNoAnswer(e, browserOnline(), "Connect to the internet to sign in."));
       else if (e instanceof ApiFailure) setError(e.message);
       else setError(e instanceof Error ? e.message : "Could not sign in.");
     }

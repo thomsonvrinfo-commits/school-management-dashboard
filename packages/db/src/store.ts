@@ -49,7 +49,11 @@ export interface Store {
   teacherClasses(schoolId: string, userId: string): Promise<ClassRow[]>;
   teachesClass(schoolId: string, userId: string, classId: string): Promise<boolean>;
   classExists(schoolId: string, classId: string): Promise<boolean>;
-  enrolledStudents(schoolId: string, classIds: readonly string[], onDate: string): Promise<StudentRow[]>;
+  /**
+   * `lock: true` (the attendance push path) share-locks the enrolment rows it relies on until the transaction ends, so an
+   * administrator moving or removing a student cannot slip in between the check and the insert. Reads leave it off.
+   */
+  enrolledStudents(schoolId: string, classIds: readonly string[], onDate: string, opts?: { lock?: boolean }): Promise<StudentRow[]>;
   timetableForTeacher(schoolId: string, userId: string, weekday: number): Promise<SlotRow[]>;
   attendanceInRange(schoolId: string, classIds: readonly string[], from: string, to: string): Promise<AttendanceRow[]>;
 

@@ -12,6 +12,22 @@ export const ACTIONS = [
   "attendance:record",
   "attendance:read-class",
   "attendance:summary",
+  // Slice 2: school administration
+  "school:read",
+  "school:manage",
+  "student:read",
+  "student:manage",
+  "class:read",
+  "class:manage",
+  "class:read-roster",
+  "teacher:read",
+  "teacher:assign",
+  "teaching:own-classes",
+  // P1: staff accounts
+  "staff:read",
+  "staff:manage",
+  // P1: who did what
+  "audit:read",
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -55,6 +71,34 @@ export function authorize(principal: Principal, action: string, resource: Resour
       return resource.teachesClass === true ? allow : deny("not_assigned_to_class");
 
     case "attendance:summary":
+      return principal.role === "head" ? allow : deny("role_not_permitted");
+
+    // ---- school administration: the head runs the school's records; a teacher sees only what they teach ----
+    case "school:read":
+    case "school:manage":
+    case "student:read":
+    case "student:manage":
+    case "class:read":
+    case "class:manage":
+    case "teacher:read":
+    case "teacher:assign":
+      return principal.role === "head" ? allow : deny("role_not_permitted");
+
+    case "class:read-roster":
+      if (principal.role === "head") return allow;
+      if (principal.role !== "teacher") return deny("role_not_permitted");
+      return resource.teachesClass === true ? allow : deny("not_assigned_to_class");
+
+    case "teaching:own-classes":
+      return principal.role === "teacher" ? allow : deny("role_not_permitted");
+
+    // ---- staff accounts: the head invites and manages teachers; nobody else sees the staff list ----
+    case "staff:read":
+    case "staff:manage":
+      return principal.role === "head" ? allow : deny("role_not_permitted");
+
+    // ---- the activity log: who changed what, for the head only ----
+    case "audit:read":
       return principal.role === "head" ? allow : deny("role_not_permitted");
 
     default:
