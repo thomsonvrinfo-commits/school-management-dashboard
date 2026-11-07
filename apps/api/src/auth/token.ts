@@ -13,7 +13,7 @@ export interface AccessClaims {
   exp: number;
 }
 
-async function hmacKey(secret: string, usage: "sign" | "verify"): Promise<CryptoKey> {
+async function hmacKey(secret: string, usage: "sign" | "verify") {
   if (secret.length < 32) throw new Error("AUTH_SECRET must be at least 32 characters");
   return crypto.subtle.importKey("raw", utf8(secret), { name: "HMAC", hash: "SHA-256" }, false, [usage]);
 }

@@ -140,16 +140,32 @@ test("a link made by a head teacher is still held to the head's rules; only an o
   expectError(await callPublic(f, "POST /v1/password-reset/complete", { body: { token, password: "granite meadow whisper" } }), 409, "head_not_managed");
 });
 
+/** One spelling of a path whatever the computer: Windows gives `C:\\...\\src\\` and this test adds `/`, so the two kinds must be made one. */
+const slashes = (p: string) => p.replaceAll("\\", "/");
+
+test("paths from a Windows computer are compared in the same way as paths from Linux", () => {
+  // what `fileURLToPath` plus this test's own walk produce on Windows: backslashes from the start, a forward slash added for each folder
+  assert.ok(slashes("C:\\work\\apps\\api\\src\\staff/operator.ts").endsWith("/staff/operator.ts"));
+  assert.ok(slashes("/work/apps/api/src/staff/operator.ts").endsWith("/staff/operator.ts"));
+  assert.ok(!slashes("C:\\work\\apps\\api\\src\\staff/not-operator.ts").endsWith("/staff/operator.ts"));
+});
+
 test("the operator commands are not reachable from the HTTP API", () => {
   const src = fileURLToPath(new URL("../src/", import.meta.url));
   const files: string[] = [];
   const walk = (dir: string) => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       if (e.isDirectory()) walk(dir + e.name + "/");
-      else if (e.name.endsWith(".ts")) files.push(dir + e.name);
+      else if (e.name.endsWith(".ts")) files.push(slashes(dir + e.name));
     }
   };
   walk(src);
+  // The scan must really have looked: with a wrong path or a wrong separator it would find nothing and "pass".
+  for (const must of ["/src/app.ts", "/src/routes.ts", "/src/staff/handlers.ts", "/src/staff/members.ts"]) {
+    assert.ok(files.some((p) => p.endsWith(must)), `the scan did not reach ${must} (${files.length} files found): it is not looking where it should`);
+  }
+  const own = files.filter((p) => p.endsWith("/staff/operator.ts"));
+  assert.equal(own.length, 1, "the one file allowed to name the operator commands must be found, so the exclusion below is really exercised");
   const offenders = files.filter((p) => !p.endsWith("/staff/operator.ts") && /operator\.ts|createSchoolWithHead|resetHeadPassword|inviteHead/.test(readFileSync(p, "utf8")));
   assert.deepEqual(offenders, [], "nothing under apps/api/src may import the operator commands");
 });
